@@ -6,6 +6,8 @@ description: Update Clawdbot from upstream when branch has diverged (ahead/behin
 
 Use this workflow when your fork has diverged from upstream (e.g., "18 commits ahead, 29 commits behind").
 
+**Push policy:** Push only to your own fork (e.g. `origin`). Never push to the ClawdBot-Next repo or to the formal OpenClaw repo; only pull from ClawdBot-Next and fetch from OpenClaw.
+
 ## Quick Reference
 
 ```bash
