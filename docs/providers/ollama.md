@@ -1,7 +1,7 @@
 ---
-summary: "Run OpenClaw with Ollama (local LLM runtime)"
+summary: "Run OpenClaw with Ollama (local or cloud)"
 read_when:
-  - You want to run OpenClaw with local models via Ollama
+  - You want to run OpenClaw with local or cloud Ollama models
   - You need Ollama setup and configuration guidance
 title: "Ollama"
 ---
@@ -50,7 +50,7 @@ openclaw config set models.providers.ollama.apiKey "ollama-local"
 
 ## Model discovery (implicit provider)
 
-When you set `OLLAMA_API_KEY` (or an auth profile) and **do not** define `models.providers.ollama`, OpenClaw discovers models from the local Ollama instance at `http://127.0.0.1:11434`:
+When you set `OLLAMA_API_KEY` (or an auth profile) and **do not** define `models.providers.ollama`, OpenClaw discovers models from your Ollama endpoint. By default that is the local instance at `http://127.0.0.1:11434`. For **Ollama Cloud** or a remote server, set `OLLAMA_HOST` so discovery and requests use that URL:
 
 - Queries `/api/tags` and `/api/show`
 - Keeps only models that report `tools` capability
@@ -87,6 +87,17 @@ The simplest way to enable Ollama is via environment variable:
 ```bash
 export OLLAMA_API_KEY="ollama-local"
 ```
+
+### Ollama Cloud or remote (OLLAMA_HOST)
+
+To use **Ollama Cloud** or any remote Ollama API, set `OLLAMA_HOST` to the base URL. Discovery and all requests then use that endpoint instead of localhost:
+
+```bash
+export OLLAMA_API_KEY="your-cloud-api-key"
+export OLLAMA_HOST="https://api.ollama.cloud"
+```
+
+Use a full URL (`https://...` or `http://...`). For a host:port (e.g. a LAN server), you can set `OLLAMA_HOST=192.168.1.10:11434`; OpenClaw will use `http://` by default (or `https://` for port 443).
 
 ### Explicit setup (manual models)
 
@@ -222,17 +233,10 @@ For auto-discovered models, OpenClaw uses the context window reported by Ollama 
 
 ### Ollama not detected
 
-Make sure Ollama is running and that you set `OLLAMA_API_KEY` (or an auth profile), and that you did **not** define an explicit `models.providers.ollama` entry:
+Make sure you set `OLLAMA_API_KEY` (or an auth profile) and that you did **not** define an explicit `models.providers.ollama` entry. Then ensure the API is reachable:
 
-```bash
-ollama serve
-```
-
-And that the API is accessible:
-
-```bash
-curl http://localhost:11434/api/tags
-```
+- **Local:** run `ollama serve` and check `curl http://localhost:11434/api/tags`.
+- **Ollama Cloud / remote:** set `OLLAMA_HOST` to your endpoint (e.g. `export OLLAMA_HOST="https://api.ollama.cloud"`) and ensure the URL is reachable and returns `/api/tags` (e.g. `curl https://api.ollama.cloud/api/tags`).
 
 ### No models available
 

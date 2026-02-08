@@ -69,8 +69,7 @@ const QWEN_PORTAL_DEFAULT_COST = {
   cacheWrite: 0,
 };
 
-const OLLAMA_BASE_URL = "http://127.0.0.1:11434/v1";
-const OLLAMA_API_BASE_URL = "http://127.0.0.1:11434";
+const OLLAMA_DEFAULT_HOST = "http://127.0.0.1:11434";
 const OLLAMA_DEFAULT_CONTEXT_WINDOW = 128000;
 const OLLAMA_DEFAULT_MAX_TOKENS = 8192;
 const OLLAMA_DEFAULT_COST = {
@@ -79,6 +78,30 @@ const OLLAMA_DEFAULT_COST = {
   cacheRead: 0,
   cacheWrite: 0,
 };
+
+/** Resolve Ollama API root and /v1 base from OLLAMA_HOST (e.g. for Ollama Cloud). */
+function resolveOllamaBaseUrls(): { apiBase: string; providerBase: string } {
+  const raw = process.env.OLLAMA_HOST?.trim();
+  if (!raw) {
+    return {
+      apiBase: OLLAMA_DEFAULT_HOST,
+      providerBase: `${OLLAMA_DEFAULT_HOST}/v1`,
+    };
+  }
+  let root: string;
+  if (raw.includes("://")) {
+    root = raw.replace(/\/v1\/?$/, "").replace(/\/$/, "");
+  } else {
+    const hostPort = raw;
+    const portMatch = /:(\d+)$/.exec(hostPort);
+    const port = portMatch ? portMatch[1] : "";
+    root = port === "443" ? `https://${hostPort}` : `http://${hostPort || "127.0.0.1:11434"}`;
+  }
+  return {
+    apiBase: root,
+    providerBase: root.endsWith("/v1") ? root : `${root}/v1`,
+  };
+}
 
 export const QIANFAN_BASE_URL = "https://qianfan.baidubce.com/v2";
 export const QIANFAN_DEFAULT_MODEL_ID = "deepseek-v3.2";
@@ -111,8 +134,9 @@ async function discoverOllamaModels(): Promise<ModelDefinitionConfig[]> {
   if (process.env.VITEST || process.env.NODE_ENV === "test") {
     return [];
   }
+  const { apiBase } = resolveOllamaBaseUrls();
   try {
-    const response = await fetch(`${OLLAMA_API_BASE_URL}/api/tags`, {
+    const response = await fetch(`${apiBase}/api/tags`, {
       signal: AbortSignal.timeout(5000),
     });
     if (!response.ok) {
@@ -121,7 +145,7 @@ async function discoverOllamaModels(): Promise<ModelDefinitionConfig[]> {
     }
     const data = (await response.json()) as OllamaTagsResponse;
     if (!data.models || data.models.length === 0) {
-      console.warn("No Ollama models found on local instance");
+      console.warn("No Ollama models found at configured instance");
       return [];
     }
     return data.models.map((model) => {
@@ -144,7 +168,15 @@ async function discoverOllamaModels(): Promise<ModelDefinitionConfig[]> {
       };
     });
   } catch (error) {
-    console.warn(`Failed to discover Ollama models: ${String(error)}`);
+    const cause =
+      error instanceof Error && error.cause instanceof Error
+        ? ` (${error.cause.message})`
+        : error instanceof Error && error.cause
+          ? ` (${String(error.cause)})`
+          : "";
+    console.warn(
+      `Failed to discover Ollama models: ${String(error)}${cause}. Is Ollama reachable at ${apiBase}? (Set OLLAMA_HOST for a remote/cloud instance.)`,
+    );
     return [];
   }
 }
@@ -406,9 +438,10 @@ async function buildVeniceProvider(): Promise<ProviderConfig> {
 }
 
 async function buildOllamaProvider(): Promise<ProviderConfig> {
+  const { providerBase } = resolveOllamaBaseUrls();
   const models = await discoverOllamaModels();
   return {
-    baseUrl: OLLAMA_BASE_URL,
+    baseUrl: providerBase,
     api: "openai-completions",
     models,
   };
