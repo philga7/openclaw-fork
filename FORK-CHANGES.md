@@ -1,0 +1,40 @@
+# Fork-specific changes
+
+Explicit listing of changes in this fork relative to upstream [OpenClaw](https://github.com/openclaw/openclaw). For sync procedure, see [.agent/workflows/update_clawdbot.md](.agent/workflows/update_clawdbot.md).
+
+## ClawdBot-Next / prompt-engine integration
+
+- **Agent system prompt** — Integrated [ClawdBot-Next](https://github.com/ClawdBot/ClawdBot-Next) prompt-engine:
+  - `src/agents/prompt-engine/`: skills loader, triangulator, skill injector, system directives, types, clawd-matrix, data/skills.json.
+  - `src/agents/system-prompt.ts`: uses `SkillsLoader`, `Triangulator`, `SkillInjector`, `SYSTEM_DIRECTIVES`; `buildAgentSystemPrompt` is async and accepts optional `userPrompt` for triangulation. OpenClaw-specific sections (safety, branding, `memoryCitationsMode`, sandbox) preserved.
+  - `src/agents/pi-embedded-runner/system-prompt.ts`: passes `userPrompt` through to `buildAgentSystemPrompt` and awaits it.
+- Kept in sync with upstream ClawdBot-Next where applicable; OpenClaw naming and config preserved where we diverge.
+
+## Maintainer-specific changes
+
+- **Documentation**
+  - Root [README.md](README.md): “About this repository” section describing the fork, ClawdBot-Next integration, and sync workflow link.
+  - This file: explicit listing of fork changes and commit history.
+  - [.agent/workflows/update_clawdbot.md](.agent/workflows/update_clawdbot.md): push policy and link to this file.
+- **Ollama** — Support `OLLAMA_HOST` for cloud/remote discovery and requests (`8cb58d65d`).
+- **Agent loop** — One config/restart/cron change per request; report and ask before retry (`394341893`).
+- **Build** — Type fix for `SkillLibrary` in `selectSkillsForContext` (plugin-sdk dts build) (`ffe83456b`).
+- _(Add further customizations, fixes, or config here as you make them.)_
+
+## Workflow / tooling
+
+- **Sync workflow** — [.agent/workflows/update_clawdbot.md](.agent/workflows/update_clawdbot.md): steps for rebasing/merging from upstream (ClawdBot-Next and OpenClaw), conflict patterns, prompt-engine merge notes, rebuild and verify steps.
+- Push policy: only to this fork; never push to ClawdBot-Next or OpenClaw upstream.
+
+## Commit history (fork-only)
+
+Commits on this fork’s `main` that are not in upstream OpenClaw (oldest first). Generated from `git log upstream/main..origin/main --oneline --no-merges`.
+
+| Commit      | Description                                                                             |
+| ----------- | --------------------------------------------------------------------------------------- |
+| `b840d2be4` | Integrate ClawdBot-Next prompt-engine into system prompt                                |
+| `31f034440` | Docs: add push policy to update_clawdbot workflow (push only to fork)                   |
+| `ffe83456b` | fix: type SkillLibrary in selectSkillsForContext (fix build:plugin-sdk:dts)             |
+| `8cb58d65d` | Ollama: support OLLAMA_HOST for cloud/remote discovery and requests                     |
+| `394341893` | Agent loop-prevention: one config/restart/cron per request, report and ask before retry |
+| `9a58bb654` | README: add fork notice, ClawdBot-Next integration, and from-source clone note          |

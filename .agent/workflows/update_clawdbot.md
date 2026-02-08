@@ -8,6 +8,8 @@ Use this workflow when your fork has diverged from upstream (e.g., "18 commits a
 
 **Push policy:** Push only to your own fork (e.g. `origin`). Never push to the ClawdBot-Next repo or to the formal OpenClaw repo; only pull from ClawdBot-Next and fetch from OpenClaw.
 
+For an explicit list of fork-specific changes (prompt-engine, maintainer edits, workflow), see [FORK-CHANGES.md](../../FORK-CHANGES.md) in the repo root.
+
 ## Quick Reference
 
 ```bash
