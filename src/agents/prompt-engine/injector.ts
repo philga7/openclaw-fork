@@ -87,7 +87,9 @@ export class SkillInjector {
       const match = skill.variants.find((v) =>
         v.variant_name.toLowerCase().includes(userLevel.toLowerCase()),
       );
-      if (match) return match.generalized_instruction_template;
+      if (match) {
+        return match.generalized_instruction_template;
+      }
     }
 
     // Default to the first variant if no specific match found

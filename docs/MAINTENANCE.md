@@ -102,7 +102,7 @@ If the OpenClaw **agent** is asked to run a "status" or "check" on the system an
 - **`git status`** followed by **`git clean -fd`** (to "clean untracked files")
 - Or a custom script that removes `dist/` or runs a partial build
 
-Because **`dist/` is gitignored**, `git clean -fd` removes the entire `dist/` tree, including `dist/agents/prompt-engine/data/skills.json`. The gateway then fails with ENOENT when loading the skills registry.
+Because **`dist/` is gitignored**, `git clean -fd` removes the entire `dist/` tree, including `dist/data/skills.json` and `dist/agents/prompt-engine/data/skills.json`. The gateway then fails with ENOENT when loading the skills registry.
 
 **What to do:**
 
@@ -116,7 +116,7 @@ Because **`dist/` is gitignored**, `git clean -fd` removes the entire `dist/` tr
    systemctl --user start openclaw-gateway.service
    ```
 
-3. **Fallback:** The gateway now tries the **source** path (`src/agents/prompt-engine/data/skills.json`) if the file is missing in `dist/`. So if only `dist/` was wiped (repo intact), the gateway may still start and you will see a log line: `Loaded skills from source path (dist copy missing)`.
+3. **Resolution order:** The gateway looks for `skills.json` in this order: (1) `dist/data/skills.json` when the process is started as `node dist/index.js` (canonical for bundled/production), (2) same-directory-as-loader `data/skills.json`, (3) **source** path `src/agents/prompt-engine/data/skills.json` if the dist copy is missing. So if only `dist/` was wiped (repo intact), the gateway may still start and you will see: `Loaded skills from source path (dist copy missing)`.
 
 ## Protection Mechanisms
 

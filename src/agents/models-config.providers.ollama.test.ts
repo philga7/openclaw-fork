@@ -15,7 +15,9 @@ describe("Ollama provider", () => {
       // Ollama requires explicit configuration via OLLAMA_API_KEY env var or profile
       expect(providers?.ollama).toBeUndefined();
     } finally {
-      if (prev !== undefined) process.env.OLLAMA_API_KEY = prev;
+      if (prev !== undefined) {
+        process.env.OLLAMA_API_KEY = prev;
+      }
     }
   });
 
@@ -50,10 +52,16 @@ describe("Ollama provider", () => {
       expect(providers?.ollama).toBeDefined();
       expect(providers?.ollama?.baseUrl).toBe("https://api.ollama.cloud/v1");
     } finally {
-      if (prevKey !== undefined) process.env.OLLAMA_API_KEY = prevKey;
-      else delete process.env.OLLAMA_API_KEY;
-      if (prevHost !== undefined) process.env.OLLAMA_HOST = prevHost;
-      else delete process.env.OLLAMA_HOST;
+      if (prevKey !== undefined) {
+        process.env.OLLAMA_API_KEY = prevKey;
+      } else {
+        delete process.env.OLLAMA_API_KEY;
+      }
+      if (prevHost !== undefined) {
+        process.env.OLLAMA_HOST = prevHost;
+      } else {
+        delete process.env.OLLAMA_HOST;
+      }
     }
   });
 
