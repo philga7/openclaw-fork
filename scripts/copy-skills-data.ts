@@ -1,6 +1,8 @@
 #!/usr/bin/env tsx
 /**
- * Copy skills.json from src/agents/prompt-engine/data to dist/agents/prompt-engine/data
+ * Copy skills.json from src/agents/prompt-engine/data to:
+ * - dist/agents/prompt-engine/data (unbundled layout)
+ * - dist/data (canonical for bundled gateway: node dist/index.js resolves here)
  */
 
 import fs from "node:fs";
@@ -10,10 +12,18 @@ import { fileURLToPath } from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, "..");
 
-const srcDataDir = path.join(projectRoot, "src", "agents", "prompt-engine", "data");
-const distDataDir = path.join(projectRoot, "dist", "agents", "prompt-engine", "data");
-const srcSkillsJson = path.join(srcDataDir, "skills.json");
-const distSkillsJson = path.join(distDataDir, "skills.json");
+const srcSkillsJson = path.join(
+  projectRoot,
+  "src",
+  "agents",
+  "prompt-engine",
+  "data",
+  "skills.json",
+);
+const distPaths = [
+  path.join(projectRoot, "dist", "agents", "prompt-engine", "data", "skills.json"),
+  path.join(projectRoot, "dist", "data", "skills.json"),
+];
 
 function copySkillsData() {
   if (!fs.existsSync(srcSkillsJson)) {
@@ -21,12 +31,14 @@ function copySkillsData() {
     return;
   }
 
-  if (!fs.existsSync(distDataDir)) {
-    fs.mkdirSync(distDataDir, { recursive: true });
+  for (const distSkillsJson of distPaths) {
+    const distDir = path.dirname(distSkillsJson);
+    if (!fs.existsSync(distDir)) {
+      fs.mkdirSync(distDir, { recursive: true });
+    }
+    fs.copyFileSync(srcSkillsJson, distSkillsJson);
+    console.log(`[copy-skills-data] Copied skills.json to ${distSkillsJson}`);
   }
-
-  fs.copyFileSync(srcSkillsJson, distSkillsJson);
-  console.log(`[copy-skills-data] Copied skills.json to ${distSkillsJson}`);
 }
 
 copySkillsData();

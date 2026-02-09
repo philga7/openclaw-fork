@@ -5,14 +5,48 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { SkillCategory, SkillDefinition, SkillLibrary } from "./types.js";
 
-// Path to the skills database (dist: dist/agents/prompt-engine/data/skills.json)
+// Path when this file lives at dist/agents/prompt-engine/ (unbundled) or dist/ (bundled chunk)
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SKILLS_PATH = path.join(__dirname, "data", "skills.json");
 
-/** When running from repo, source path if dist was wiped (e.g. git clean, failed build). */
-function getSourceSkillsPath(): string {
-  const repoRoot = path.resolve(__dirname, "..", "..", "..");
-  return path.join(repoRoot, "src", "agents", "prompt-engine", "data", "skills.json");
+/** Dist-root path: when process is started as `node dist/index.js`, skills.json lives at dist/data/skills.json. */
+function getDistRootSkillsPath(): string | null {
+  const entry = typeof process !== "undefined" && process.argv[1];
+  if (!entry || typeof entry !== "string") {
+    return null;
+  }
+  const distDir = path.dirname(entry);
+  if (path.basename(distDir) !== "dist") {
+    return null;
+  }
+  return path.join(distDir, "data", "skills.json");
+}
+
+/** Source path when dist was wiped (e.g. git clean, failed build). repoRoot defaults from __dirname. */
+function getSourceSkillsPath(repoRoot?: string): string {
+  const root =
+    repoRoot ??
+    (path.basename(__dirname) === "dist"
+      ? path.resolve(__dirname, "..")
+      : path.resolve(__dirname, "..", "..", ".."));
+  return path.join(root, "src", "agents", "prompt-engine", "data", "skills.json");
+}
+
+/** Ordered paths to try: dist/data (bundled), __dirname/data, then source. */
+function getSkillsPathsToTry(): string[] {
+  const paths: string[] = [];
+  const distRootPath = getDistRootSkillsPath();
+  if (distRootPath) {
+    paths.push(distRootPath);
+  }
+  paths.push(SKILLS_PATH);
+  const entry = typeof process !== "undefined" && process.argv[1];
+  const repoRoot =
+    entry && typeof entry === "string"
+      ? path.resolve(path.dirname(entry), "..")
+      : path.resolve(__dirname, "..", "..", "..");
+  paths.push(getSourceSkillsPath(repoRoot));
+  return [...new Set(paths)];
 }
 
 export class SkillsLoader {
@@ -20,19 +54,20 @@ export class SkillsLoader {
 
   /**
    * Loads the skills.json file and caches it in memory.
-   * Tries dist path first; on ENOENT falls back to source path (repo layout).
+   * Tries dist/data (when run as node dist/index.js), then __dirname/data, then source path.
    */
   static async loadLibrary(): Promise<SkillLibrary> {
     if (this.cache) {
       return this.cache;
     }
 
-    const paths = [SKILLS_PATH, getSourceSkillsPath()];
+    const paths = getSkillsPathsToTry();
+    const primaryPath = paths[0];
     for (const p of paths) {
       try {
         const rawData = await fs.readFile(p, "utf-8");
         this.cache = JSON.parse(rawData) as SkillLibrary;
-        if (p !== SKILLS_PATH) {
+        if (p !== primaryPath) {
           console.warn("[PromptEngine] Loaded skills from source path (dist copy missing):", p);
         }
         return this.cache;
