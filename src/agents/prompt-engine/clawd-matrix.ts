@@ -42,19 +42,27 @@ export class ClawdMatrix {
 
     // Basic logic to pick skills based on domain (matching system-prompt.ts logic)
     const coreSkill = SkillsLoader.findSkill(library, "Context_Audit_&_Triage");
-    if (coreSkill) skills.push(coreSkill);
+    if (coreSkill) {
+      skills.push(coreSkill);
+    }
 
     if (routingResult.domain === "Finance") {
       const financeSkill = SkillsLoader.findSkill(library, "Financial_Risk_&_Deployment");
-      if (financeSkill) skills.push(financeSkill);
+      if (financeSkill) {
+        skills.push(financeSkill);
+      }
     } else if (routingResult.domain === "Coding") {
       const codingSkill = SkillsLoader.findSkill(library, "Workflow_to_Code_Mapping");
-      if (codingSkill) skills.push(codingSkill);
+      if (codingSkill) {
+        skills.push(codingSkill);
+      }
     }
 
     if (skills.length === 0) {
       const generalSkill = SkillsLoader.findSkill(library, "General_Reasoning");
-      if (generalSkill) skills.push(generalSkill);
+      if (generalSkill) {
+        skills.push(generalSkill);
+      }
     }
 
     // 3. Dynamic Skill Injection (Binding context to skills)

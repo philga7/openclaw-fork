@@ -98,7 +98,9 @@ export class Triangulator {
     result: Partial<IntentContext>,
   ): ("domain" | "userLevel" | "tone")[] {
     const missing: ("domain" | "userLevel" | "tone")[] = [];
-    if (!result.domain) missing.push("domain");
+    if (!result.domain) {
+      missing.push("domain");
+    }
     return missing;
   }
 
