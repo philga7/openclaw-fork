@@ -17,7 +17,7 @@ export type QueuedPayload<T> = {
   queuedAt: number;
 };
 
-export type ZombieBufferCallbacks<T> = {
+export type ZombieBufferCallbacks<_T = unknown> = {
   onReap: (sessionKey: string) => void;
   onReBind?: (sessionKey: string) => void;
 };
