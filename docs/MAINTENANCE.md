@@ -143,6 +143,42 @@ the **agent** ran a shell command (e.g. `ls …/skills/bird/`) via the exec tool
 - **Why it happens:** The agent may be following docs or prompts that mention a skill (e.g. bird) and tries to list or inspect that skill’s directory. If the skill is optional and not present in the repo or workspace, the command fails.
 - **What to do:** Ignore the error if you do not need that skill. To use the skill, install it (e.g. via ClawHub) into the workspace or `~/.openclaw/skills/`. Skill sync into sandboxes now skips entries whose source directory is missing, so a missing skill dir will not break syncing of other skills.
 
+## Tool-level concurrency locks for CLI-backed skills
+
+OpenClaw is inherently multi-agent; scheduled Waves can cause several agents to hit the same CLI-backed tool at the exact same time (for example a Twitter/X client or email CLI). Many of these CLIs are effectively **singletons** on the host and will fail if multiple processes try to use the same config/database/socket concurrently.
+
+### Behavior in this fork
+
+This fork adds a **per-tool-name semaphore** for plugin tools (skills) that shell out to such CLIs. When enabled for a given tool name, the gateway:
+
+- **Serializes tool calls within the gateway process** (only one `execute` per tool name runs at a time).
+- **Queues concurrent calls** instead of failing fast with "Command exited with code 1".
+- Releases the lock as soon as the underlying CLI call finishes so the next waiting agent can proceed.
+
+By default, no tools are treated as singletons; concurrency only changes when you turn this on via configuration.
+
+### Configuration: `OPENCLAW_SINGLETON_TOOLS`
+
+Singleton behavior is controlled by an environment variable on the gateway process:
+
+- **Variable**: `OPENCLAW_SINGLETON_TOOLS`
+- **Format**: comma-separated list of tool names (normalized in the same way as other tool policy keys).
+- **Scope**: applies to **plugin tools only** (skills loaded via `src/plugins/tools.ts`).
+
+Example:
+
+```bash
+export OPENCLAW_SINGLETON_TOOLS="bird,himalaya"
+systemctl --user restart openclaw-gateway.service
+```
+
+With this set:
+
+- Any plugin tool named `bird` or `himalaya` is executed under a per-name lock.
+- Waves where multiple agents want to use those tools will queue briefly instead of colliding at the CLI layer.
+
+You can adjust the list over time without code changes; just update the env var and restart the gateway.
+
 ## Protection Mechanisms
 
 ### Backup your service file
