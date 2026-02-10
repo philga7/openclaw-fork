@@ -56,8 +56,9 @@ If jobs show "Next: Xm ago" but never run, the scheduler timer may have stopped.
 
 1. Run `openclaw cron list` or `openclaw cron status` — this may re-arm the timer automatically.
 2. The scheduler has an **anti-zombie self-healing** check-in: if no timer tick completes within 60 seconds (e.g. event loop blocked), it logs `cron: anti-zombie: no tick in 60s, re-initializing scheduler` and re-arms the timer. If you see that log, the scheduler recovered without a restart.
-3. Restart the Gateway if the problem persists.
-4. Check logs for `cron: timer tick failed`, `cron: job failed` (timeout), `cron: recovering from hung run`, or `cron: watchdog re-arming timer`.
+3. When anti-zombie recovery runs, it also scans for **stale in-flight jobs** (jobs with an old `runningAtMs` marker) and logs `cron: anti-zombie: recovering stale-running job` as it clears those markers and marks the jobs due again. This prevents one-shot `--at` reminders from being "lost" if the scheduler freezes mid-delivery.
+4. Restart the Gateway if the problem persists.
+5. Check logs for `cron: timer tick failed`, `cron: job failed` (timeout), `cron: recovering from hung run`, `cron: anti-zombie: recovering stale-running job`, or `cron: watchdog re-arming timer`.
 
 ## Cron fired but no delivery
 

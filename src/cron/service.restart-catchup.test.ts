@@ -162,4 +162,80 @@ describe("CronService restart catch-up", () => {
     cron.stop();
     await store.cleanup();
   });
+
+  it("only clears obviously stale running markers on startup", async () => {
+    const store = await makeStorePath();
+    const enqueueSystemEvent = vi.fn();
+    const requestHeartbeatNow = vi.fn();
+
+    const now = Date.parse("2025-12-13T17:00:00.000Z");
+    const staleRunningAt = now - 60 * 60_000; // 60 minutes ago
+    const freshRunningAt = now - 5 * 60_000; // 5 minutes ago
+
+    await fs.mkdir(path.dirname(store.storePath), { recursive: true });
+    await fs.writeFile(
+      store.storePath,
+      JSON.stringify(
+        {
+          version: 1,
+          jobs: [
+            {
+              id: "restart-stale-running-only",
+              name: "stale marker",
+              enabled: true,
+              createdAtMs: Date.parse("2025-12-10T12:00:00.000Z"),
+              updatedAtMs: staleRunningAt,
+              schedule: { kind: "cron", expr: "0 16 * * *", tz: "UTC" },
+              sessionTarget: "main",
+              wakeMode: "next-heartbeat",
+              payload: { kind: "systemEvent", text: "stale marker" },
+              state: {
+                nextRunAtMs: Date.parse("2025-12-13T16:00:00.000Z"),
+                runningAtMs: staleRunningAt,
+              },
+            },
+            {
+              id: "restart-fresh-running",
+              name: "fresh marker",
+              enabled: true,
+              createdAtMs: Date.parse("2025-12-10T12:00:00.000Z"),
+              updatedAtMs: freshRunningAt,
+              schedule: { kind: "cron", expr: "0 18 * * *", tz: "UTC" },
+              sessionTarget: "main",
+              wakeMode: "next-heartbeat",
+              payload: { kind: "systemEvent", text: "fresh marker" },
+              state: {
+                nextRunAtMs: Date.parse("2025-12-13T18:00:00.000Z"),
+                runningAtMs: freshRunningAt,
+              },
+            },
+          ],
+        },
+        null,
+        2,
+      ),
+      "utf-8",
+    );
+
+    const cron = new CronService({
+      storePath: store.storePath,
+      cronEnabled: true,
+      log: noopLogger,
+      enqueueSystemEvent,
+      requestHeartbeatNow,
+      runIsolatedAgentJob: vi.fn(async () => ({ status: "ok" })),
+    });
+
+    await cron.start();
+
+    const jobs = await cron.list({ includeDisabled: true });
+    const stale = jobs.find((job) => job.id === "restart-stale-running-only");
+    const fresh = jobs.find((job) => job.id === "restart-fresh-running");
+
+    expect(stale?.state.runningAtMs).toBeUndefined();
+    expect(fresh?.state.runningAtMs).toBe(freshRunningAt);
+
+    cron.stop();
+    await store.cleanup();
+  });
 });

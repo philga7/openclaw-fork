@@ -172,6 +172,7 @@ Common signatures:
 
 - `cron: scheduler disabled; jobs will not run automatically` → cron disabled.
 - `cron: timer tick failed` → scheduler tick failed; check file/log/runtime errors.
+- `cron: anti-zombie: no tick in 60s, re-initializing scheduler` → scheduler detected an idle/frozen timer and re-initialized itself (stale in-flight jobs are also re-enqueued to run again).
 - `heartbeat skipped` with `reason=quiet-hours` → outside active hours window.
 - `heartbeat: unknown accountId` → invalid account id for heartbeat delivery target.
 

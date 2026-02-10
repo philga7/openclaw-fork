@@ -636,7 +636,7 @@ export function startAntiZombieWatchdog(state: CronServiceState) {
   if (!state.deps.cronEnabled) {
     return;
   }
-  state.antiZombieTimer = setInterval(() => {
+  state.antiZombieTimer = setInterval(async () => {
     if (!state.deps.cronEnabled || state.store === null) {
       return;
     }
@@ -655,6 +655,50 @@ export function startAntiZombieWatchdog(state: CronServiceState) {
       { lastTimerTickAtMs: lastTick, idleMs: now - lastTick, thresholdMs: ANTI_ZOMBIE_IDLE_MS },
       "cron: anti-zombie: no tick in 60s, re-initializing scheduler",
     );
+
+    try {
+      // Recover in-flight jobs that were marked as running but never
+      // completed. We treat only sufficiently old markers as stale to avoid
+      // double-running genuinely in-progress work.
+      await locked(state, async () => {
+        const jobs = state.store?.jobs ?? [];
+        const staleJobs = jobs.filter(
+          (job) =>
+            job.enabled &&
+            typeof job.state.runningAtMs === "number" &&
+            now - job.state.runningAtMs >= STALE_RUNNING_MS,
+        );
+
+        if (staleJobs.length === 0) {
+          return;
+        }
+
+        for (const job of staleJobs) {
+          const runningAtMs = job.state.runningAtMs as number;
+          state.deps.log.warn(
+            {
+              jobId: job.id,
+              runningAtMs,
+              staleAfterMs: STALE_RUNNING_MS,
+            },
+            "cron: anti-zombie: recovering stale-running job",
+          );
+
+          // Clear the running marker and force the job to be considered due
+          // immediately so the next scheduler tick will execute it.
+          job.state.runningAtMs = undefined;
+          job.state.nextRunAtMs = now;
+        }
+
+        await persist(state);
+      });
+    } catch (err) {
+      state.deps.log.error(
+        { err: String(err) },
+        "cron: anti-zombie: failed to recover stale-running jobs",
+      );
+    }
+
     if (state.timer) {
       clearTimeout(state.timer);
     }

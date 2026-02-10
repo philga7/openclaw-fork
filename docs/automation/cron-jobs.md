@@ -71,6 +71,12 @@ The Gateway loads the file into memory and writes it back on changes, so manual 
 are only safe when the Gateway is stopped. Prefer `openclaw cron add/edit` or the cron
 tool call API for changes.
 
+On restart, the scheduler will **catch up** overdue work:
+
+- Overdue jobs are run after startup based on their stored `nextRunAtMs`.
+- Stale `runningAtMs` markers (clearly older than a normal run) are cleared so those jobs can be retried.
+- Fresh `runningAtMs` markers are preserved to avoid double-running jobs that were legitimately in flight across a restart.
+
 ## Beginner-friendly overview
 
 Think of a cron job as: **when** to run + **what** to do.
@@ -463,6 +469,7 @@ openclaw system event --mode now --text "Next heartbeat: check battery."
 - Check cron is enabled: `cron.enabled` and `OPENCLAW_SKIP_CRON`.
 - Check the Gateway is running continuously (cron runs inside the Gateway process).
 - For `cron` schedules: confirm timezone (`--tz`) vs the host timezone.
+- If you see `cron: anti-zombie: no tick in 60s, re-initializing scheduler` and `cron: anti-zombie: recovering stale-running job` in logs, the scheduler detected a frozen timer, re-armed itself, and re-enqueued stale in-flight jobs (including one-shot `--at` reminders) so they can still run.
 
 ### A recurring job keeps delaying after failures
 
