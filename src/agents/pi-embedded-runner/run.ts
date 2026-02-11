@@ -52,6 +52,7 @@ import { log } from "./logger.js";
 import { resolveModel } from "./model.js";
 import { runEmbeddedAttempt } from "./run/attempt.js";
 import { buildEmbeddedRunPayloads } from "./run/payloads.js";
+import { getEstimatedSessionTokens } from "./session-token-estimate.js";
 import {
   truncateOversizedToolResultsInSession,
   sessionLikelyHasOversizedToolResults,
@@ -388,10 +389,62 @@ export async function runEmbeddedPiAgent(
       let toolResultTruncationAttempted = false;
       const usageAccumulator = createUsageAccumulator();
       let autoCompactionCount = 0;
+      const PROACTIVE_COMPACTION_THRESHOLD = 0.8;
       try {
         while (true) {
           attemptedThinking.add(thinkLevel);
           await fs.mkdir(resolvedWorkspace, { recursive: true });
+
+          // Proactive compaction: if session is near context limit, compact before the next turn
+          let estimatedTokens = 0;
+          try {
+            estimatedTokens = await getEstimatedSessionTokens(params.sessionFile);
+          } catch (err) {
+            log.debug(
+              `session token estimate failed: ${describeUnknownError(err)}; skipping proactive compaction check`,
+            );
+          }
+          if (
+            estimatedTokens > 0 &&
+            ctxInfo.tokens > 0 &&
+            estimatedTokens >= ctxInfo.tokens * PROACTIVE_COMPACTION_THRESHOLD
+          ) {
+            log.warn(
+              `proactive compaction: estimated tokens (${estimatedTokens}) >= ${PROACTIVE_COMPACTION_THRESHOLD * 100}% of context (${ctxInfo.tokens}); compacting before next turn`,
+            );
+            const compactResult = await compactEmbeddedPiSessionDirect({
+              sessionId: params.sessionId,
+              sessionKey: params.sessionKey,
+              messageChannel: params.messageChannel,
+              messageProvider: params.messageProvider,
+              agentAccountId: params.agentAccountId,
+              authProfileId: lastProfileId,
+              sessionFile: params.sessionFile,
+              workspaceDir: resolvedWorkspace,
+              agentDir,
+              config: params.config,
+              skillsSnapshot: params.skillsSnapshot,
+              senderIsOwner: params.senderIsOwner,
+              provider,
+              model: modelId,
+              thinkLevel,
+              reasoningLevel: params.reasoningLevel,
+              bashElevated: params.bashElevated,
+              extraSystemPrompt: params.extraSystemPrompt,
+              ownerNumbers: params.ownerNumbers,
+            });
+            if (compactResult.compacted) {
+              autoCompactionCount += 1;
+              log.info(
+                `proactive compaction succeeded for ${provider}/${modelId}; proceeding with turn`,
+              );
+            } else {
+              log.debug(
+                `proactive compaction skipped or failed: ${compactResult.reason ?? "unknown"}`,
+              );
+            }
+            continue;
+          }
 
           const prompt =
             provider === "anthropic" ? scrubAnthropicRefusalMagic(params.prompt) : params.prompt;

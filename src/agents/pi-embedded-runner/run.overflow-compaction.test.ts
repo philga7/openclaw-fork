@@ -118,6 +118,10 @@ vi.mock("./tool-result-truncation.js", () => ({
   sessionLikelyHasOversizedToolResults: vi.fn(() => false),
 }));
 
+vi.mock("./session-token-estimate.js", () => ({
+  getEstimatedSessionTokens: vi.fn(),
+}));
+
 vi.mock("./utils.js", () => ({
   describeUnknownError: vi.fn((err: unknown) => {
     if (err instanceof Error) {
@@ -162,6 +166,7 @@ import { compactEmbeddedPiSessionDirect } from "./compact.js";
 import { log } from "./logger.js";
 import { runEmbeddedPiAgent } from "./run.js";
 import { runEmbeddedAttempt } from "./run/attempt.js";
+import { getEstimatedSessionTokens } from "./session-token-estimate.js";
 import {
   sessionLikelyHasOversizedToolResults,
   truncateOversizedToolResultsInSession,
@@ -169,6 +174,7 @@ import {
 
 const mockedRunEmbeddedAttempt = vi.mocked(runEmbeddedAttempt);
 const mockedCompactDirect = vi.mocked(compactEmbeddedPiSessionDirect);
+const mockedGetEstimatedSessionTokens = vi.mocked(getEstimatedSessionTokens);
 const mockedSessionLikelyHasOversizedToolResults = vi.mocked(sessionLikelyHasOversizedToolResults);
 const mockedTruncateOversizedToolResultsInSession = vi.mocked(
   truncateOversizedToolResultsInSession,
@@ -207,6 +213,7 @@ const baseParams = {
 describe("overflow compaction in run loop", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockedGetEstimatedSessionTokens.mockResolvedValue(0);
     mockedSessionLikelyHasOversizedToolResults.mockReturnValue(false);
     mockedTruncateOversizedToolResultsInSession.mockResolvedValue({
       truncated: false,
@@ -432,5 +439,42 @@ describe("overflow compaction in run loop", () => {
 
     expect(mockedCompactDirect).not.toHaveBeenCalled();
     expect(log.warn).not.toHaveBeenCalledWith(expect.stringContaining("source=assistantError"));
+  });
+
+  it("runs proactive compaction when estimated tokens >= 80% of context window", async () => {
+    // First call: over threshold → trigger compaction. Second: under (after compact) → run attempt
+    mockedGetEstimatedSessionTokens.mockResolvedValueOnce(170_000).mockResolvedValueOnce(50_000);
+
+    mockedCompactDirect.mockResolvedValueOnce({
+      ok: true,
+      compacted: true,
+      result: {
+        summary: "Proactive compact",
+        firstKeptEntryId: "entry-1",
+        tokensBefore: 170_000,
+        tokensAfter: 50_000,
+      },
+    });
+    mockedRunEmbeddedAttempt.mockResolvedValueOnce(makeAttemptResult({ promptError: null }));
+
+    const result = await runEmbeddedPiAgent(baseParams);
+
+    expect(mockedGetEstimatedSessionTokens).toHaveBeenCalledWith("/tmp/session.json");
+    expect(mockedGetEstimatedSessionTokens).toHaveBeenCalledTimes(2);
+    expect(mockedCompactDirect).toHaveBeenCalledTimes(1);
+    expect(mockedCompactDirect).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionFile: "/tmp/session.json",
+        sessionId: "test-session",
+      }),
+    );
+    expect(mockedRunEmbeddedAttempt).toHaveBeenCalledTimes(1);
+    expect(log.warn).toHaveBeenCalledWith(
+      expect.stringContaining("proactive compaction: estimated tokens (170000) >= 80%"),
+    );
+    expect(log.info).toHaveBeenCalledWith(
+      expect.stringContaining("proactive compaction succeeded"),
+    );
+    expect(result.meta.error).toBeUndefined();
   });
 });

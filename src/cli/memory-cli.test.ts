@@ -4,6 +4,15 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 const getMemorySearchManager = vi.fn();
 const loadConfig = vi.fn(() => ({}));
 const resolveDefaultAgentId = vi.fn(() => "main");
+const getLatestSessionTranscriptForAgent = vi.fn();
+const compactEmbeddedPiSessionDirect = vi.fn();
+const resolveRunWorkspaceDir = vi.fn((params: { workspaceDir: string }) => ({
+  workspaceDir: params.workspaceDir,
+  usedFallback: false,
+  agentId: "main",
+  agentIdSource: "default" as const,
+}));
+const resolveDefaultModelForAgent = vi.fn(() => ({ provider: "anthropic", model: "claude-3-5" }));
 
 vi.mock("../memory/index.js", () => ({
   getMemorySearchManager,
@@ -17,9 +26,31 @@ vi.mock("../agents/agent-scope.js", () => ({
   resolveDefaultAgentId,
 }));
 
+vi.mock("../config/sessions/paths.js", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("../config/sessions/paths.js")>();
+  return {
+    ...mod,
+    getLatestSessionTranscriptForAgent,
+  };
+});
+
+vi.mock("../agents/pi-embedded-runner/compact.js", () => ({
+  compactEmbeddedPiSessionDirect,
+}));
+
+vi.mock("../agents/workspace-run.js", () => ({
+  resolveRunWorkspaceDir,
+}));
+
+vi.mock("../agents/model-selection.js", () => ({
+  resolveDefaultModelForAgent,
+}));
+
 afterEach(async () => {
   vi.restoreAllMocks();
   getMemorySearchManager.mockReset();
+  getLatestSessionTranscriptForAgent.mockReset();
+  compactEmbeddedPiSessionDirect.mockReset();
   process.exitCode = undefined;
   const { setVerbose } = await import("../globals.js");
   setVerbose(false);
@@ -363,5 +394,109 @@ describe("memory cli", () => {
     expect(close).toHaveBeenCalled();
     expect(error).toHaveBeenCalledWith(expect.stringContaining("Memory search failed: boom"));
     expect(process.exitCode).toBe(1);
+  });
+
+  describe("memory compact", () => {
+    it("errors when agent is missing", async () => {
+      const { registerMemoryCli } = await import("./memory-cli.js");
+      const { defaultRuntime } = await import("../runtime.js");
+      const error = vi.spyOn(defaultRuntime, "error").mockImplementation(() => {});
+
+      const program = new Command();
+      program.name("test");
+      registerMemoryCli(program);
+      resolveDefaultAgentId.mockReturnValue("");
+      await program.parseAsync(["memory", "compact"], { from: "user" });
+
+      expect(error).toHaveBeenCalledWith(
+        expect.stringContaining("Agent id is required. Use --agent <id>"),
+      );
+      expect(process.exitCode).toBe(1);
+      expect(getLatestSessionTranscriptForAgent).not.toHaveBeenCalled();
+    });
+
+    it("errors when no session transcript exists for agent", async () => {
+      const { registerMemoryCli } = await import("./memory-cli.js");
+      const { defaultRuntime } = await import("../runtime.js");
+      getLatestSessionTranscriptForAgent.mockResolvedValue(null);
+      const error = vi.spyOn(defaultRuntime, "error").mockImplementation(() => {});
+
+      const program = new Command();
+      program.name("test");
+      registerMemoryCli(program);
+      await program.parseAsync(["memory", "compact", "--agent", "main"], { from: "user" });
+
+      expect(getLatestSessionTranscriptForAgent).toHaveBeenCalledWith("main");
+      expect(error).toHaveBeenCalledWith(
+        expect.stringContaining("No session transcript found for agent"),
+      );
+      expect(process.exitCode).toBe(1);
+      expect(compactEmbeddedPiSessionDirect).not.toHaveBeenCalled();
+    });
+
+    it("calls compaction and logs success when compacted", async () => {
+      const { registerMemoryCli } = await import("./memory-cli.js");
+      const { defaultRuntime } = await import("../runtime.js");
+      getLatestSessionTranscriptForAgent.mockResolvedValue({
+        sessionId: "session-1",
+        sessionFile: "/tmp/agents/main/sessions/session-1.jsonl",
+      });
+      compactEmbeddedPiSessionDirect.mockResolvedValue({
+        ok: true,
+        compacted: true,
+        result: {
+          summary: "Done",
+          firstKeptEntryId: "e1",
+          tokensBefore: 100_000,
+          tokensAfter: 30_000,
+        },
+      });
+      const log = vi.spyOn(defaultRuntime, "log").mockImplementation(() => {});
+
+      const program = new Command();
+      program.name("test");
+      registerMemoryCli(program);
+      await program.parseAsync(["memory", "compact", "--agent", "main"], { from: "user" });
+
+      expect(compactEmbeddedPiSessionDirect).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sessionId: "session-1",
+          sessionFile: "/tmp/agents/main/sessions/session-1.jsonl",
+          customInstructions: undefined,
+        }),
+      );
+      expect(log).toHaveBeenCalledWith(expect.stringContaining("Session compacted"));
+      expect(log).toHaveBeenCalledWith(expect.stringContaining("tokens"));
+      expect(process.exitCode).toBeUndefined();
+    });
+
+    it("passes --instructions to compaction as customInstructions", async () => {
+      const { registerMemoryCli } = await import("./memory-cli.js");
+      const { defaultRuntime } = await import("../runtime.js");
+      getLatestSessionTranscriptForAgent.mockResolvedValue({
+        sessionId: "s1",
+        sessionFile: "/tmp/s1.jsonl",
+      });
+      compactEmbeddedPiSessionDirect.mockResolvedValue({
+        ok: true,
+        compacted: false,
+        result: undefined,
+      });
+      vi.spyOn(defaultRuntime, "log").mockImplementation(() => {});
+
+      const program = new Command();
+      program.name("test");
+      registerMemoryCli(program);
+      await program.parseAsync(
+        ["memory", "compact", "--agent", "main", "--instructions", "focus on decisions"],
+        { from: "user" },
+      );
+
+      expect(compactEmbeddedPiSessionDirect).toHaveBeenCalledWith(
+        expect.objectContaining({
+          customInstructions: "focus on decisions",
+        }),
+      );
+    });
   });
 });

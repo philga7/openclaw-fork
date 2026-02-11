@@ -1,3 +1,4 @@
+import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { SessionEntry } from "./types.js";
@@ -32,6 +33,46 @@ export function resolveSessionTranscriptsDirForAgent(
 
 export function resolveDefaultSessionStorePath(agentId?: string): string {
   return path.join(resolveAgentSessionsDir(agentId), "sessions.json");
+}
+
+/**
+ * Returns the most recently modified session transcript for an agent, if any.
+ * Session id is derived from the filename (stem of the .jsonl file).
+ */
+export async function getLatestSessionTranscriptForAgent(
+  agentId?: string,
+): Promise<{ sessionId: string; sessionFile: string } | null> {
+  const dir = resolveSessionTranscriptsDirForAgent(agentId);
+  let entries: Array<{ name: string; mtimeMs: number }>;
+  try {
+    const files = await fs.readdir(dir, { withFileTypes: true });
+    const jsonl = files.filter((e) => e.isFile() && e.name.endsWith(".jsonl"));
+    if (jsonl.length === 0) {
+      return null;
+    }
+    const withStat = await Promise.all(
+      jsonl.map(async (e) => {
+        const full = path.join(dir, e.name);
+        const stat = await fs.stat(full).catch(() => null);
+        return { name: e.name, mtimeMs: stat?.mtimeMs ?? 0 };
+      }),
+    );
+    entries = withStat.filter((e) => e.mtimeMs > 0);
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === "ENOENT") {
+      return null;
+    }
+    throw err;
+  }
+  if (entries.length === 0) {
+    return null;
+  }
+  entries.sort((a, b) => b.mtimeMs - a.mtimeMs);
+  const first = entries[0];
+  const sessionId = first.name.replace(/\.jsonl$/i, "");
+  const sessionFile = path.join(dir, first.name);
+  return { sessionId, sessionFile };
 }
 
 export function resolveSessionTranscriptPath(

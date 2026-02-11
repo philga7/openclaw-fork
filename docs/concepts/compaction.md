@@ -43,6 +43,8 @@ Use `/compact` (optionally with instructions) to force a compaction pass:
 /compact Focus on decisions and open questions
 ```
 
+From the CLI (e.g. when no channel session is active), use `openclaw memory compact --agent <id>` to compact the latest session transcript for that agent. See [CLI memory](/cli/memory).
+
 ## Context window source
 
 Context window is model-specific. OpenClaw uses the model definition from the configured provider catalog to determine limits.

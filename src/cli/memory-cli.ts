@@ -4,9 +4,15 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { resolveDefaultAgentId } from "../agents/agent-scope.js";
+import { resolveDefaultModelForAgent } from "../agents/model-selection.js";
+import { compactEmbeddedPiSessionDirect } from "../agents/pi-embedded-runner/compact.js";
+import { resolveRunWorkspaceDir } from "../agents/workspace-run.js";
 import { loadConfig } from "../config/config.js";
 import { resolveStateDir } from "../config/paths.js";
-import { resolveSessionTranscriptsDirForAgent } from "../config/sessions/paths.js";
+import {
+  getLatestSessionTranscriptForAgent,
+  resolveSessionTranscriptsDirForAgent,
+} from "../config/sessions/paths.js";
 import { setVerbose } from "../globals.js";
 import { getMemorySearchManager, type MemorySearchManagerResult } from "../memory/index.js";
 import { listMemoryFiles, normalizeExtraMemoryPaths } from "../memory/internal.js";
@@ -24,6 +30,7 @@ type MemoryCommandOptions = {
   index?: boolean;
   force?: boolean;
   verbose?: boolean;
+  instructions?: string;
 };
 
 type MemoryManager = NonNullable<MemorySearchManagerResult["manager"]>;
@@ -483,6 +490,63 @@ export async function runMemoryStatus(opts: MemoryCommandOptions) {
   }
 }
 
+export async function runMemoryCompact(opts: MemoryCommandOptions) {
+  setVerbose(Boolean(opts.verbose));
+  const cfg = loadConfig();
+  const agentId = resolveAgent(cfg, opts.agent);
+  if (!agentId?.trim()) {
+    defaultRuntime.error("Agent id is required. Use --agent <id>.");
+    process.exitCode = 1;
+    return;
+  }
+  const latest = await getLatestSessionTranscriptForAgent(agentId);
+  if (!latest) {
+    const sessionsDir = resolveSessionTranscriptsDirForAgent(agentId);
+    defaultRuntime.error(
+      `No session transcript found for agent "${agentId}". ` +
+        `Sessions dir: ${shortenHomePath(sessionsDir)}`,
+    );
+    process.exitCode = 1;
+    return;
+  }
+  const { sessionId, sessionFile } = latest;
+  const workspaceResolution = resolveRunWorkspaceDir({
+    workspaceDir: process.cwd(),
+    agentId,
+    config: cfg,
+  });
+  const { provider, model } = resolveDefaultModelForAgent({ cfg, agentId });
+  const result = await compactEmbeddedPiSessionDirect({
+    sessionId,
+    sessionFile,
+    workspaceDir: workspaceResolution.workspaceDir,
+    config: cfg,
+    provider,
+    model,
+    customInstructions: opts.instructions?.trim() || undefined,
+  });
+  if (!result.ok) {
+    defaultRuntime.error(`Compaction failed: ${result.reason ?? "unknown"}`);
+    process.exitCode = 1;
+    return;
+  }
+  const rich = isRich();
+  const success = (text: string) => colorize(rich, theme.success, text);
+  const muted = (text: string) => colorize(rich, theme.muted, text);
+  if (result.compacted && result.result) {
+    const { tokensBefore, tokensAfter } = result.result;
+    const tokenLine =
+      tokensBefore != null && tokensAfter != null
+        ? ` (${tokensBefore.toLocaleString()} → ${tokensAfter.toLocaleString()} tokens)`
+        : tokensBefore != null
+          ? ` (${tokensBefore.toLocaleString()} tokens before)`
+          : "";
+    defaultRuntime.log(success(`Session compacted${tokenLine}.`));
+  } else {
+    defaultRuntime.log(muted("Compaction skipped (nothing to compact or already within limits)."));
+  }
+}
+
 export function registerMemoryCli(program: Command) {
   const memory = program
     .command("memory")
@@ -641,6 +705,17 @@ export function registerMemoryCli(program: Command) {
           },
         });
       }
+    });
+
+  memory
+    .command("compact")
+    .description("Compact the latest session transcript for an agent (summarize and prune history)")
+    .option("--agent <id>", "Agent id (required)")
+    .option("--force", "Reserved for future use", false)
+    .option("--instructions <string>", "Extra compaction instructions for the summarizer")
+    .option("--verbose", "Verbose logging", false)
+    .action(async (opts: MemoryCommandOptions) => {
+      await runMemoryCompact(opts);
     });
 
   memory

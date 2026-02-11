@@ -418,7 +418,7 @@ describe("buildCommandsMessage", () => {
     expect(text).toContain("/commands - List all slash commands.");
     expect(text).toContain("/skill - Run a skill by name.");
     expect(text).toContain("/think (/thinking, /t) - Set thinking level.");
-    expect(text).toContain("/compact [text] - Compact the session context.");
+    expect(text).toContain("/compact - Compact the session context.");
     expect(text).not.toContain("/config");
     expect(text).not.toContain("/debug");
   });
