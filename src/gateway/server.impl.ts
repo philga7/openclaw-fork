@@ -78,7 +78,6 @@ import {
   refreshGatewayHealthSnapshot,
 } from "./server/health-state.js";
 import { loadGatewayTlsRuntime } from "./server/tls.js";
-import { markZombie, reBind } from "./zombie-session-buffer.js";
 
 export { __resetModelCatalogCacheForTest } from "./server-model-catalog.js";
 
@@ -358,11 +357,7 @@ export async function startGatewayServer(
   let bonjourStop: (() => Promise<void>) | null = null;
   const nodeRegistry = new NodeRegistry();
   const nodePresenceTimers = new Map<string, ReturnType<typeof setInterval>>();
-  const nodeSubscriptions = createNodeSubscriptionManager({
-    onSubscribe: (_, sessionKey) => {
-      reBind(sessionKey);
-    },
-  });
+  const nodeSubscriptions = createNodeSubscriptionManager();
   const nodeSendEvent = (opts: { nodeId: string; event: string; payloadJSON?: string | null }) => {
     const payload = safeParseJson(opts.payloadJSON ?? null);
     nodeRegistry.sendEvent(opts.nodeId, opts.event, payload);
@@ -374,12 +369,6 @@ export async function startGatewayServer(
   const nodeSubscribe = nodeSubscriptions.subscribe;
   const nodeUnsubscribe = nodeSubscriptions.unsubscribe;
   const nodeUnsubscribeAll = nodeSubscriptions.unsubscribeAll;
-  const getSessionKeysForNode = nodeSubscriptions.getSessionKeysForNode;
-  const markZombieSessionsForNode = (nodeId: string) => {
-    for (const sessionKey of getSessionKeysForNode(nodeId)) {
-      markZombie(sessionKey);
-    }
-  };
   const broadcastVoiceWakeChanged = (triggers: string[]) => {
     broadcast("voicewake.changed", { triggers }, { dropIfSlow: true });
   };
@@ -519,8 +508,6 @@ export async function startGatewayServer(
       nodeSubscribe,
       nodeUnsubscribe,
       nodeUnsubscribeAll,
-      markZombieSessionsForNode,
-      getSessionKeysForNode,
       hasConnectedMobileNode: hasMobileNodeConnected,
       nodeRegistry,
       agentRunSeq,
