@@ -167,8 +167,13 @@ function moveToFinished(session: ProcessSession, status: ProcessStatus) {
     session.child.stdout?.destroy?.();
     session.child.stderr?.destroy?.();
 
-    // Remove all event listeners to prevent memory leaks
-    session.child.removeAllListeners();
+    // Remove all event listeners to prevent memory leaks (guarded for mocks)
+    if (
+      typeof (session.child as unknown as { removeAllListeners?: () => void })
+        .removeAllListeners === "function"
+    ) {
+      (session.child as unknown as { removeAllListeners: () => void }).removeAllListeners();
+    }
 
     // Clear the reference
     delete session.child;
