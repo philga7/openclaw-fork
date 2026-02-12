@@ -24,6 +24,9 @@ const DEFAULT_JOB_TIMEOUT_MS = 10 * 60_000;
 /** Minimum threshold for clearing stuck runningAtMs; avoids false positives for short jobs. */
 const MIN_STUCK_RUN_MS = 15 * 60 * 1000;
 
+/** Failsafe upper bound for stuck runs used in maintenance recomputes. */
+const STUCK_RUN_MS = 2 * 60 * 60 * 1000;
+
 export function getStuckRunThresholdMs(job: CronJob): number {
   const jobMaxMs =
     job.payload.kind === "agentTurn" && typeof job.payload.timeoutSeconds === "number"
