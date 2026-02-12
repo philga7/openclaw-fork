@@ -8,6 +8,7 @@ import {
   computeJobNextRunAtMs,
   nextWakeAtMs,
   recomputeNextRuns,
+  recomputeNextRunsForMaintenance,
   resolveJobPayloadTextForMain,
 } from "./jobs.js";
 import { locked } from "./locked.js";
@@ -81,7 +82,7 @@ function applyJobResult(
   }
 
   const shouldDelete =
-    job.schedule.kind === "at" && result.status === "ok" && job.deleteAfterRun === true;
+    job.schedule.kind === "at" && job.deleteAfterRun === true && result.status === "ok";
 
   if (!shouldDelete) {
     if (job.schedule.kind === "at") {
@@ -171,6 +172,7 @@ export function armTimer(state: CronServiceState) {
 
 export async function onTimer(state: CronServiceState) {
   const now = state.deps.nowMs();
+
   // Recover from hung onTimer: if running has been true for too long, reset and proceed.
   if (state.running && typeof state.runningStartedAtMs === "number") {
     if (now - state.runningStartedAtMs > STALE_RUNNING_MS) {
@@ -181,11 +183,35 @@ export async function onTimer(state: CronServiceState) {
       state.running = false;
       state.runningStartedAtMs = null;
     } else {
+      // Scheduler is actively running and not stale; re-arm the timer so the scheduler
+      // keeps ticking even while a job is still executing (see #12025).
+      if (state.timer) {
+        clearTimeout(state.timer);
+      }
+      state.timer = setTimeout(async () => {
+        try {
+          await onTimer(state);
+        } catch (err) {
+          state.deps.log.error({ err: String(err) }, "cron: timer tick failed");
+        }
+      }, MAX_TIMER_DELAY_MS);
       return;
     }
   } else if (state.running) {
+    // Running without a timestamp (defensive): treat as non-stale and re-arm.
+    if (state.timer) {
+      clearTimeout(state.timer);
+    }
+    state.timer = setTimeout(async () => {
+      try {
+        await onTimer(state);
+      } catch (err) {
+        state.deps.log.error({ err: String(err) }, "cron: timer tick failed");
+      }
+    }, MAX_TIMER_DELAY_MS);
     return;
   }
+
   state.running = true;
   state.runningStartedAtMs = now;
   try {
@@ -194,7 +220,10 @@ export async function onTimer(state: CronServiceState) {
       const due = findDueJobs(state);
 
       if (due.length === 0) {
-        const changed = recomputeNextRuns(state);
+        // Use maintenance-only recompute to avoid advancing past-due nextRunAtMs
+        // values without execution. This prevents jobs from being silently skipped
+        // when the timer wakes up but findDueJobs returns empty (see #13992).
+        const changed = recomputeNextRunsForMaintenance(state);
         if (changed) {
           await persist(state);
         }
@@ -378,7 +407,10 @@ export async function runMissedJobs(state: CronServiceState) {
       return false;
     }
     const next = j.state.nextRunAtMs;
-    if (j.schedule.kind === "at" && j.state.lastStatus === "ok") {
+    if (j.schedule.kind === "at" && j.state.lastStatus) {
+      // Any terminal status (ok, error, skipped) means the job already
+      // ran at least once.  Don't re-fire it on restart — applyJobResult
+      // disables one-shot jobs, but guard here defensively (#13845).
       return false;
     }
     return typeof next === "number" && now >= next;
@@ -449,7 +481,7 @@ async function executeJobCore(
 
       let heartbeatResult: HeartbeatRunResult;
       for (;;) {
-        heartbeatResult = await state.deps.runHeartbeatOnce({ reason });
+        heartbeatResult = await state.deps.runHeartbeatOnce({ reason, agentId: job.agentId });
         if (
           heartbeatResult.status !== "skipped" ||
           heartbeatResult.reason !== "requests-in-flight"
