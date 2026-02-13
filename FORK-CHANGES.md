@@ -5,9 +5,13 @@ Explicit listing of changes in this fork relative to upstream [OpenClaw](https:/
 ## ClawdBot-Next / prompt-engine integration
 
 - **Agent system prompt** — Integrated [ClawdBot-Next](https://github.com/ClawdBot/ClawdBot-Next) prompt-engine:
-  - `src/agents/prompt-engine/`: skills loader, triangulator, skill injector, system directives, types, clawd-matrix, data/skills.json.
-  - `src/agents/system-prompt.ts`: uses `SkillsLoader`, `Triangulator`, `SkillInjector`, `SYSTEM_DIRECTIVES`; `buildAgentSystemPrompt` is async and accepts optional `userPrompt` for triangulation. OpenClaw-specific sections (safety, branding, `memoryCitationsMode`, sandbox) preserved.
+  - `src/agents/prompt-engine/`: skills loader, triangulator, skill injector, system directives, types, clawd-matrix, data/skills.json, data/domain-map.json.
+  - `src/agents/system-prompt.ts`: uses `SkillsLoader`, `Triangulator`, `SkillInjector`, `SYSTEM_DIRECTIVES`; `buildAgentSystemPrompt` is async and accepts optional `userPrompt` for triangulation. Skill selection is driven by `SkillsLoader.getSkillsForDomain(context.domain)` using domain-map.json (no hardcoded domain→skill mapping). OpenClaw-specific sections (safety, branding, `memoryCitationsMode`, sandbox) preserved.
   - `src/agents/pi-embedded-runner/system-prompt.ts`: passes `userPrompt` through to `buildAgentSystemPrompt` and awaits it.
+- **Domain-map and JSON-driven routing** — Domain detection and skill selection are config-driven:
+  - `data/domain-map.json`: defines per-domain `triggers` (keywords for rule-based routing) and `skills` (skill names to load), plus optional `global_defaults` applied to every domain. Same resolution order as skills.json (dist/data, then source).
+  - Triangulator builds regex rules from `SkillsLoader.getDomainTriggers()` instead of hardcoded KEYWORD_RULES; adds a General fallback rule for greetings.
+  - SkillsLoader exposes `loadDomainMap()`, `getDomainTriggers()`, and `getSkillsForDomain(domain)`; skill selection in the system prompt uses `getSkillsForDomain` exclusively.
 - Kept in sync with upstream ClawdBot-Next where applicable; OpenClaw naming and config preserved where we diverge.
 
 ## Maintainer-specific changes
@@ -24,13 +28,13 @@ Explicit listing of changes in this fork relative to upstream [OpenClaw](https:/
 ### Prompt-engine, skills loader, and build pipeline
 
 - **Skills data packaging**
-  - Copy `src/agents/prompt-engine/data/skills.json` to `dist/data/` and `dist/agents/prompt-engine/data/` during build via `scripts/copy-skills-data.ts` (tsdown does not copy non-TS assets; without this, the Skills Registry hits ENOENT at runtime). When the gateway runs as `node dist/index.js`, the loader resolves `dist/data/skills.json` first so it works with the bundled layout.
+  - Copy `src/agents/prompt-engine/data/skills.json` and `src/agents/prompt-engine/data/domain-map.json` to `dist/data/` and `dist/agents/prompt-engine/data/` during build via `scripts/copy-skills-data.ts` (tsdown does not copy non-TS assets; without this, the Skills Registry and domain map hit ENOENT at runtime). When the gateway runs as `node dist/index.js`, the loader resolves `dist/data/skills.json` and `dist/data/domain-map.json` first so it works with the bundled layout.
 - **Build race (skills ENOENT) hardening**
   - Avoid empty-`dist/` window during `pnpm build`: (1) `tsdown.config.ts` sets `clean: false` so the output dir is not wiped and `dist/data/` persists; (2) gateway eager-loads `SkillsLoader.loadLibrary()` at boot and caches in RAM so cron/agent turns never read disk during a build; (3) loader retries on ENOENT for a short window. See [MAINTENANCE.md](docs/MAINTENANCE.md) “Build-phase race”.
 - **Skills loader resolution**
-  - Resolves `skills.json` in order: `dist/data/skills.json` (when `argv[1]` is `.../dist/index.js`), then same-dir `data/skills.json`, then `src/agents/prompt-engine/data/skills.json`. If the dist copy is missing, logs `Loaded skills from source path (dist copy missing)` and may retry; gateway boot preloads the library into a static singleton so the running process does not depend on disk after startup.
+  - Resolves `skills.json` in order: `dist/data/skills.json` (when `argv[1]` is `.../dist/index.js`), then same-dir `data/skills.json`, then `src/agents/prompt-engine/data/skills.json`. If the dist copy is missing, logs `Loaded skills from source path (dist copy missing)` and may retry; gateway boot preloads the library into a static singleton so the running process does not depend on disk after startup. `domain-map.json` uses the same path order (dist/data, then source); if missing, loader returns `{ domains: {} }` and the triangulator still has a General fallback.
 - **Type/SDK fixes**
-  - Type fix for `SkillLibrary` in `selectSkillsForContext` (plugin-sdk dts build) and ensured `skills.json` is copied to dist during build.
+  - `SkillDefinition` includes optional `associated_domains` for parity with ClawdBot-Next. Skill selection in the system prompt uses `SkillsLoader.getSkillsForDomain(context.domain)` (domain-map–driven); no in-repo `selectSkillsForContext`; `skills.json` and `domain-map.json` are copied to dist during build.
 
 ### Gateway tools and execution controls
 
@@ -138,3 +142,4 @@ Commits on this fork’s `main` that are not in upstream OpenClaw (oldest first)
 | `8cb58d65d` | Ollama: support OLLAMA_HOST for cloud/remote discovery and requests                     |
 | `394341893` | Agent loop-prevention: one config/restart/cron per request, report and ask before retry |
 | `9a58bb654` | README: add fork notice, ClawdBot-Next integration, and from-source clone note          |
+| `764bd1757` | prompt-engine: integrate ClawdBot-Next domain-map and JSON-driven triangulation         |
