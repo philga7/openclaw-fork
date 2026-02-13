@@ -114,6 +114,11 @@ Explicit listing of changes in this fork relative to upstream [OpenClaw](https:/
   - **`message:sent`**: fired after each Discord reply is delivered with context `channel`, `sessionId`, `replyText`.
   - Handlers can register for `"message"`, `"message:received"`, or `"message:sent"` as with other hook types. Telegram can be wired similarly in `src/telegram/bot-message-dispatch.ts` and delivery if needed.
 
+### Upstream merge (Feb 2026) and session path fix
+
+- **Merge from openclaw/main** — Integrated 113 upstream commits (through early Feb 2026). Resolved 9 conflicts while keeping fork behavior: labeler uses `github.token` (no App) in label/label-issues jobs; stderr in tool errors + `after_tool_call` on errors in `pi-tool-definition-adapter.ts`; upstream safe skill sync dest + fork `baseDir` check in `skills/workspace.ts`; async `buildAgentSystemPrompt` tests in `system-prompt.test.ts`; fork `getLatestSessionTranscriptForAgent` plus upstream path validation/APIs in `config/sessions/paths.ts`; both proactive-compaction and upstream promptTokens test in `run.overflow-compaction.test.ts`; `/compact` `scope: "both"` in `commands-registry.data.ts`. Discord channel-fetch test expectation updated for upstream role-based routing.
+- **Session file path resolution** — Upstream added strict validation in `resolvePathWithinSessionsDir` (“Session file path must be within sessions directory”). When the reply flow called `resolveSessionFilePath` without `agentId`, the default agent’s sessions dir was used; sessions for other agents (e.g. Discord `analyst`) could have stored absolute `sessionFile` paths, causing the check to throw. Fix: (1) pass `{ agentId }` from `runPreparedReply` into `resolveSessionFilePath` in `src/auto-reply/reply/get-reply-run.ts` so the sessions dir matches the session’s agent; (2) in `resolveSessionFilePath`, if the stored `sessionFile` would escape the sessions dir (legacy absolute path or wrong agent), fall back to the path derived from `sessionId` under the same dir instead of throwing.
+
 - _(Add further customizations, fixes, or config here as you make them.)_
 
 ## Workflow / tooling
@@ -123,7 +128,7 @@ Explicit listing of changes in this fork relative to upstream [OpenClaw](https:/
 
 ## Commit history (fork-only)
 
-Commits on this fork’s `main` that are not in upstream OpenClaw (oldest first). Generated from `git log upstream/main..origin/main --oneline --no-merges`.
+Commits on this fork’s `main` that are not in upstream OpenClaw (oldest first). Regenerate with: `git log upstream/main..origin/main --oneline --no-merges`. After the Feb 2026 upstream merge, fork-only commits include the merge resolution and the session path fix (pass `agentId` into `resolveSessionFilePath`, defensive fallback when stored path escapes sessions dir).
 
 | Commit      | Description                                                                             |
 | ----------- | --------------------------------------------------------------------------------------- |
