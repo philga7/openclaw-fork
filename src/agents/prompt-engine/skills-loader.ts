@@ -5,9 +5,22 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { SkillCategory, SkillDefinition, SkillLibrary } from "./types.js";
 
+/** Domain-map entry: triggers (keywords) and skill names for that domain. */
+interface DomainConfig {
+  triggers: string[];
+  skills: string[];
+}
+
+/** Top-level structure for domain-map.json. */
+interface DomainMap {
+  domains: Record<string, DomainConfig>;
+  global_defaults?: string[];
+}
+
 // Path when this file lives at dist/agents/prompt-engine/ (unbundled) or dist/ (bundled chunk)
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SKILLS_PATH = path.join(__dirname, "data", "skills.json");
+const MAP_PATH = path.join(__dirname, "data", "domain-map.json");
 
 /** Dist-root path: when process is started as `node dist/index.js`, skills.json lives at dist/data/skills.json. */
 function getDistRootSkillsPath(): string | null {
@@ -49,8 +62,49 @@ function getSkillsPathsToTry(): string[] {
   return [...new Set(paths)];
 }
 
+/** Dist-root path for a file under data/ (e.g. domain-map.json). */
+function getDistRootDataPath(filename: string): string | null {
+  const entry = typeof process !== "undefined" && process.argv[1];
+  if (!entry || typeof entry !== "string") {
+    return null;
+  }
+  const distDir = path.dirname(entry);
+  if (path.basename(distDir) !== "dist") {
+    return null;
+  }
+  return path.join(distDir, "data", filename);
+}
+
+/** Source path for a file under prompt-engine/data. */
+function getSourceDataPath(filename: string, repoRoot?: string): string {
+  const root =
+    repoRoot ??
+    (path.basename(__dirname) === "dist"
+      ? path.resolve(__dirname, "..")
+      : path.resolve(__dirname, "..", "..", ".."));
+  return path.join(root, "src", "agents", "prompt-engine", "data", filename);
+}
+
+/** Ordered paths to try for domain-map.json (same resolution order as skills). */
+function getDomainMapPathsToTry(): string[] {
+  const paths: string[] = [];
+  const distRoot = getDistRootDataPath("domain-map.json");
+  if (distRoot) {
+    paths.push(distRoot);
+  }
+  paths.push(MAP_PATH);
+  const entry = typeof process !== "undefined" && process.argv[1];
+  const repoRoot =
+    entry && typeof entry === "string"
+      ? path.resolve(path.dirname(entry), "..")
+      : path.resolve(__dirname, "..", "..", "..");
+  paths.push(getSourceDataPath("domain-map.json", repoRoot));
+  return [...new Set(paths)];
+}
+
 export class SkillsLoader {
   private static cache: SkillLibrary | null = null;
+  private static mapCache: DomainMap | null = null;
 
   private static async retryLoadAfterEnoent(
     paths: string[],
@@ -143,6 +197,87 @@ export class SkillsLoader {
 
     console.error("[PromptEngine] skills.json not found in dist or source path");
     return {};
+  }
+
+  /**
+   * Loads domain-map.json and caches it. Uses same path resolution as skills (dist/data, then source).
+   * Returns { domains: {} } if file is missing or invalid.
+   */
+  static async loadDomainMap(): Promise<DomainMap> {
+    if (this.mapCache) {
+      return this.mapCache;
+    }
+    const paths = getDomainMapPathsToTry();
+    for (const p of paths) {
+      try {
+        const rawData = await fs.readFile(p, "utf-8");
+        this.mapCache = JSON.parse(rawData) as DomainMap;
+        if (!this.mapCache.domains || typeof this.mapCache.domains !== "object") {
+          this.mapCache = { domains: {} };
+        }
+        return this.mapCache;
+      } catch (err) {
+        const code =
+          err && typeof err === "object" && "code" in err
+            ? (err as NodeJS.ErrnoException).code
+            : undefined;
+        if (code === "ENOENT") {
+          continue;
+        }
+        console.warn("[PromptEngine] Domain map not found or invalid.", err);
+        this.mapCache = { domains: {} };
+        return this.mapCache;
+      }
+    }
+    console.warn("[PromptEngine] domain-map.json not found; using empty domain map.");
+    this.mapCache = { domains: {} };
+    return this.mapCache;
+  }
+
+  /**
+   * Returns all domain trigger patterns for the Triangulator (rule-based routing).
+   */
+  static async getDomainTriggers(): Promise<Array<{ domain: string; patterns: string[] }>> {
+    const map = await this.loadDomainMap();
+    return Object.entries(map.domains).map(([domain, config]) => ({
+      domain,
+      patterns: config.triggers ?? [],
+    }));
+  }
+
+  /**
+   * Loads skills for a given domain from domain-map.json (domain + global_defaults), then resolves
+   * names to SkillDefinition via the library. Case-insensitive domain lookup. Fallback: General_Reasoning.
+   */
+  static async getSkillsForDomain(domain: string): Promise<SkillDefinition[]> {
+    const library = await this.loadLibrary();
+    const map = await this.loadDomainMap();
+    const loadedSkills: SkillDefinition[] = [];
+
+    const targetKey = Object.keys(map.domains).find(
+      (k) => k.toLowerCase() === domain.toLowerCase(),
+    );
+    const skillNames = targetKey ? [...(map.domains[targetKey].skills ?? [])] : [];
+
+    if (map.global_defaults?.length) {
+      skillNames.push(...map.global_defaults);
+    }
+
+    for (const name of new Set(skillNames)) {
+      const skill = this.findSkill(library, name);
+      if (skill) {
+        loadedSkills.push(skill);
+      }
+    }
+
+    if (loadedSkills.length === 0) {
+      const generalSkill = this.findSkill(library, "General_Reasoning");
+      if (generalSkill) {
+        loadedSkills.push(generalSkill);
+      }
+    }
+
+    return loadedSkills;
   }
 
   /**

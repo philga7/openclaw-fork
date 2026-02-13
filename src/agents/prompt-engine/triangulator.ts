@@ -1,47 +1,49 @@
+import { SkillsLoader } from "./skills-loader.js";
 import { IntentContext } from "./types.js";
 
 /**
- * Configuration for the Rule-Based Router (Layer 1).
- * Fast, deterministic patterns to detect domain without burning LLM tokens.
- */
-const KEYWORD_RULES = [
-  {
-    domain: "Coding",
-    pattern: /\b(function|const|import|class|=>|return|npm|pip|git|docker|sudo)\b/i,
-  },
-  {
-    domain: "Finance",
-    pattern:
-      /\b(stock|price|market|cap|pe ratio|dividend|etf|crypto|bitcoin|bull|bear|forecast)\b/i,
-  },
-  {
-    domain: "Occult",
-    pattern: /\b(tarot|horoscope|zodiac|astrology|fortune|spirit|manifest|mercury retrograde)\b/i,
-  },
-  {
-    domain: "Gaming",
-    pattern: /\b(rpg|npc|dps|tank|healer|raid|dungeon|speedrun|meta|build|nerf|buff)\b/i,
-  },
-];
-
-/**
  * Interface for a lightweight LLM used for classification.
- * This decouples the engine from the specific LLM implementation of Clawdbot.
+ * This decouples the engine from the specific LLM implementation.
  */
 export interface IDomainClassifier {
   classify(input: string): Promise<Partial<IntentContext>>;
 }
 
+/** Cached rule-based patterns built from domain-map.json triggers. */
+let cachedRules: Array<{ domain: string; regex: RegExp }> | null = null;
+
+async function getRules(): Promise<Array<{ domain: string; regex: RegExp }>> {
+  if (cachedRules) {
+    return cachedRules;
+  }
+  const domainTriggers = await SkillsLoader.getDomainTriggers();
+  cachedRules = domainTriggers
+    .filter((dt) => dt.patterns.length > 0)
+    .map((dt) => {
+      const patternString = dt.patterns
+        .map((p) => p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+        .join("|");
+      return {
+        domain: dt.domain,
+        regex: new RegExp(`\\b(${patternString})\\b`, "i"),
+      };
+    });
+  cachedRules.push({
+    domain: "General",
+    regex: /^(hi|hello|hey|hola|greetings|help|start)$/i,
+  });
+  return cachedRules;
+}
+
 export class Triangulator {
   /**
    * Phase 1: Input Analysis & Requirement Triangulation
-   * Executes the Hybrid Routing Architecture.
+   * Executes the Hybrid Routing Architecture (rule-based from domain-map, then optional LLM).
    */
   static async analyze(input: string, classifier?: IDomainClassifier): Promise<IntentContext> {
-    // 1. Layer 1: Rule-Based Fast Path (Deterministic)
-    // Checks for strong keywords to instantly lock the domain.
-    for (const rule of KEYWORD_RULES) {
-      if (rule.pattern.test(input)) {
+    const rules = await getRules();
+    for (const rule of rules) {
+      if (rule.regex.test(input)) {
         return this.createContext(rule.domain, "COMPLETE", "RULE_BASED");
       }
     }

@@ -2,7 +2,7 @@ import type { ReasoningLevel, ThinkLevel } from "../auto-reply/thinking.js";
 import type { MemoryCitationsMode } from "../config/types.memory.js";
 import type { ResolvedTimeFormat } from "./date-time.js";
 import type { EmbeddedContextFile } from "./pi-embedded-helpers.js";
-import type { IntentContext, SkillDefinition, SkillLibrary } from "./prompt-engine/types.js";
+import type { IntentContext } from "./prompt-engine/types.js";
 import { SILENT_REPLY_TOKEN } from "../auto-reply/tokens.js";
 import { listDeliverableMessageChannels } from "../utils/message-channel.js";
 import { SkillInjector } from "./prompt-engine/injector.js";
@@ -166,32 +166,6 @@ function buildDocsSection(params: { docsPath?: string; isMinimal: boolean; readT
   ];
 }
 
-function selectSkillsForContext(library: SkillLibrary, context: IntentContext): SkillDefinition[] {
-  const skills: SkillDefinition[] = [];
-  const coreSkill = SkillsLoader.findSkill(library, "Context_Audit_&_Triage");
-  if (coreSkill) {
-    skills.push(coreSkill);
-  }
-  if (context.domain === "Finance") {
-    const financeSkill = SkillsLoader.findSkill(library, "Financial_Risk_&_Deployment");
-    if (financeSkill) {
-      skills.push(financeSkill);
-    }
-  } else if (context.domain === "Coding") {
-    const codingSkill = SkillsLoader.findSkill(library, "Workflow_to_Code_Mapping");
-    if (codingSkill) {
-      skills.push(codingSkill);
-    }
-  }
-  if (skills.length === 0) {
-    const generalSkill = SkillsLoader.findSkill(library, "General_Reasoning");
-    if (generalSkill) {
-      skills.push(generalSkill);
-    }
-  }
-  return skills;
-}
-
 function buildMatrixSection(context: IntentContext, skillBody: string): string[] {
   return [
     `# System Prompt: ${SYSTEM_DIRECTIVES.PERSONA.ROLE}`,
@@ -274,10 +248,9 @@ export async function buildAgentSystemPrompt(params: {
   /** Raw user prompt for prompt-engine triangulation (domain/tone/skill selection). */
   userPrompt?: string;
 }): Promise<string> {
-  const library = await SkillsLoader.loadLibrary();
   const userRawText = params.userPrompt ?? "Hello";
   const context: IntentContext = await Triangulator.analyze(userRawText);
-  const selectedSkills = selectSkillsForContext(library, context);
+  const selectedSkills = await SkillsLoader.getSkillsForDomain(context.domain);
   const instantiatedSkills = selectedSkills
     .map((skill) => SkillInjector.instantiate(skill, context))
     .join("\n\n");
