@@ -59,6 +59,21 @@ import {
 import { callGatewayTool } from "./tools/gateway.js";
 import { listNodes, resolveNodeIdFromList } from "./tools/nodes-utils.js";
 
+function truncateErrorOutput(raw: string | undefined): string | undefined {
+  if (!raw) {
+    return undefined;
+  }
+  const maxLines = 50;
+  const maxChars = 2048;
+  const lines = raw.split(/\r?\n/);
+  const sliced = lines.slice(-maxLines);
+  let text = sliced.join("\n");
+  if (text.length > maxChars) {
+    text = text.slice(text.length - maxChars);
+  }
+  return text.trim() || undefined;
+}
+
 export type ExecToolDefaults = {
   host?: ExecHost;
   security?: ExecSecurity;
@@ -920,7 +935,7 @@ export function createExecTool(
               const err = new Error(outcome.reason ?? "Command failed.") as Error & {
                 stderr?: string;
               };
-              err.stderr = truncateErrorOutput(outcome.stderrTail ?? outcome.aggregated);
+              err.stderr = truncateErrorOutput(outcome.aggregated);
               reject(err);
               return;
             }
