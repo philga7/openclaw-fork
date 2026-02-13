@@ -141,7 +141,12 @@ export function resolveSessionFilePath(
   const sessionsDir = resolveSessionsDir(opts);
   const candidate = entry?.sessionFile?.trim();
   if (candidate) {
-    return resolvePathWithinSessionsDir(sessionsDir, candidate);
+    try {
+      return resolvePathWithinSessionsDir(sessionsDir, candidate);
+    } catch {
+      // Stored sessionFile may be absolute or escape sessions dir (e.g. wrong agent, legacy).
+      // Fall back to deriving path from sessionId so we always return a path under sessionsDir.
+    }
   }
   return resolveSessionTranscriptPathInDir(sessionId, sessionsDir);
 }
