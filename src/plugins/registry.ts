@@ -458,6 +458,27 @@ export function createPluginRegistry(registryParams: PluginRegistryParams) {
     } as TypedPluginHookRegistration);
   };
 
+  /**
+   * Clear all typed hooks (called during plugin reload).
+   */
+  const clearTypedHooks = () => {
+    registry.typedHooks = [];
+    for (const plugin of registry.plugins) {
+      plugin.hookCount = 0;
+    }
+  };
+
+  /**
+   * Clear typed hooks for a specific plugin.
+   */
+  const clearTypedHooksForPlugin = (pluginId: string) => {
+    registry.typedHooks = registry.typedHooks.filter((h) => h.pluginId !== pluginId);
+    const plugin = registry.plugins.find((p) => p.id === pluginId);
+    if (plugin) {
+      plugin.hookCount = 0;
+    }
+  };
+
   const normalizeLogger = (logger: PluginLogger): PluginLogger => ({
     info: logger.info,
     warn: logger.warn,
@@ -511,5 +532,7 @@ export function createPluginRegistry(registryParams: PluginRegistryParams) {
     registerCommand,
     registerHook,
     registerTypedHook,
+    clearTypedHooks,
+    clearTypedHooksForPlugin,
   };
 }

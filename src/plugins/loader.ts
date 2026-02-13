@@ -40,6 +40,9 @@ export type PluginLoadOptions = {
 
 const registryCache = new Map<string, PluginRegistry>();
 
+/** Clears typed hooks on the previous registry when reloading (prevents handler accumulation). */
+let previousClearTypedHooks: (() => void) | null = null;
+
 const defaultLogger = () => createSubsystemLogger("plugins");
 
 const resolvePluginSdkAlias = (): string | null => {
@@ -186,13 +189,16 @@ export function loadOpenClawPlugins(options: PluginLoadOptions = {}): PluginRegi
 
   // Clear previously registered plugin commands before reloading
   clearPluginCommands();
+  // Clear previously registered typed hooks before reloading (prevents accumulation on hot-reload/restart)
+  previousClearTypedHooks?.();
 
   const runtime = createPluginRuntime();
-  const { registry, createApi } = createPluginRegistry({
+  const { registry, createApi, clearTypedHooks } = createPluginRegistry({
     logger,
     runtime,
     coreGatewayHandlers: options.coreGatewayHandlers as Record<string, GatewayRequestHandler>,
   });
+  previousClearTypedHooks = clearTypedHooks;
 
   const discovery = discoverOpenClawPlugins({
     workspaceDir: options.workspaceDir,

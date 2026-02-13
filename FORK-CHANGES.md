@@ -83,6 +83,11 @@ Explicit listing of changes in this fork relative to upstream [OpenClaw](https:/
 - **Dynamic subcommand linkage**
   - Plugin-provided CLI commands (e.g. `openclaw foundry-openclaw`) were failing with "unknown command" despite the plugin being loaded. Plugin CLI registration runs in `run-main` before lazy subcli registration and before parse: `registerPluginCliCommands(program, loadConfig())` is invoked so plugin subcommands are on the root program in time. Built-in commands (e.g. `memory`) are registered during `buildProgram()`, so overlapping plugin commands are skipped and no duplicate-command error occurs. No manual binary edits are required; `openclaw <plugin-cmd>` works when the plugin is enabled and registers a CLI. See `src/cli/run-main.ts`, `src/plugins/cli.ts`, and tests in `src/plugins/cli.test.ts`, `src/cli/program/command-registry.test.ts`.
 
+### Plugin API handler registration leak
+
+- **Typed hooks accumulation on reload**
+  - The Plugin API supports typed hooks (e.g. `before_tool_call`, `tool_result_persist`). On gateway restart, plugin reload, or hot-reload, new handlers were registered without clearing the previous registry’s typed hooks, so the count grew (e.g. 300+ handlers). Fix: the loader now clears the previous registry’s typed hooks before creating a new one. In `src/plugins/registry.ts`, `clearTypedHooks()` and `clearTypedHooksForPlugin(pluginId)` were added and returned from `createPluginRegistry()`. In `src/plugins/loader.ts`, the loader stores the current registry’s `clearTypedHooks` and invokes it at the start of the next full load (after `clearPluginCommands()`), so the registry being replaced is cleared before a fresh one is built and passed to the global hook runner.
+
 ### Model / provider integrations
 
 - **Ollama**
