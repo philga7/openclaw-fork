@@ -10,6 +10,19 @@ import { pathToFileURL } from "node:url";
 
 const require = createRequire(import.meta.url);
 
+/** Lazy jiti instance for loading .ts hooks so they run with require in scope. */
+let jitiLoader: ((id: string) => unknown) | null = null;
+function getJitiLoader(): (id: string) => unknown {
+  if (jitiLoader) return jitiLoader;
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { createJiti } = require("jiti") as { createJiti: (url: string, opts?: object) => (id: string) => unknown };
+  jitiLoader = createJiti(import.meta.url, {
+    interopDefault: true,
+    extensions: [".ts", ".tsx", ".mts", ".cts", ".js", ".mjs", ".cjs", ".json"],
+  });
+  return jitiLoader;
+}
+
 /** True if the error indicates the module is CJS but was loaded as ESM. */
 export function isCjsInEsmError(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);
@@ -28,24 +41,34 @@ function isRequireOfEsmError(err: unknown): boolean {
 /**
  * Load a hook handler module from a file path.
  * For .js, .cjs, and .ts we try require() first so CJS hooks (and .ts hooks that use require())
- * never hit "require is not defined" when Node parses them as ESM. For .mjs we use import() only.
- * On require() of ESM we fall back to import(); on any other require() failure we also try import().
+ * never hit "require is not defined" when Node parses them as ESM. For .ts, when require() fails
+ * (Node can't require .ts natively), we load via jiti so the hook runs with require in scope.
+ * For .mjs we use import() only. On require() of ESM we fall back to import().
  */
 export async function loadHookModule(filePath: string): Promise<Record<string, unknown>> {
   const resolved = path.resolve(filePath);
   const ext = path.extname(resolved).toLowerCase();
   const tryRequireFirst = ext === ".cjs" || ext === ".js" || ext === ".ts";
 
+  const isTsLike = /^\.(ts|tsx|mts|cts)$/.test(ext);
+
   if (tryRequireFirst) {
     try {
       return require(resolved) as Record<string, unknown>;
     } catch (err) {
-      // ESM file loaded via require(), or .ts not loadable via require: try import().
       if (isRequireOfEsmError(err)) {
         const url = pathToFileURL(resolved).href;
         return (await import(`${url}?t=${Date.now()}`)) as Record<string, unknown>;
       }
-      // e.g. "Unknown file extension .ts" or other require failure: try import() so tsx/loaders can handle it.
+      // .ts etc.: Node can't require() them. Load via jiti so the hook runs with require in scope.
+      if (isTsLike) {
+        try {
+          const mod = getJitiLoader()(resolved);
+          return (mod != null && typeof mod === "object" ? mod : { default: mod }) as Record<string, unknown>;
+        } catch {
+          // jiti failed (e.g. missing dep); fall back to import() so tsx/loaders can try
+        }
+      }
       const url = pathToFileURL(resolved).href;
       try {
         return (await import(`${url}?t=${Date.now()}`)) as Record<string, unknown>;
@@ -61,7 +84,15 @@ export async function loadHookModule(filePath: string): Promise<Record<string, u
     return (await import(cacheBustedUrl)) as Record<string, unknown>;
   } catch (err) {
     if (isCjsInEsmError(err)) {
-      return require(resolved) as Record<string, unknown>;
+      try {
+        return require(resolved) as Record<string, unknown>;
+      } catch {
+        if (isTsLike) {
+          const mod = getJitiLoader()(resolved);
+          return (mod != null && typeof mod === "object" ? mod : { default: mod }) as Record<string, unknown>;
+        }
+        throw err;
+      }
     }
     throw err;
   }
