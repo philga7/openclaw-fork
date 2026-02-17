@@ -34,7 +34,7 @@ todos:
     status: pending
   - id: update-plan-gantt
     content: Update the plan's Gantt chart and todo statuses to reflect completed items
-    status: pending
+    status: completed
 isProject: false
 ---
 

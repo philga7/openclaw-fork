@@ -24,11 +24,11 @@ todos:
     content: "Phase 3: Add SearXNG as a web search provider in src/agents/tools/web-search.ts"
     status: pending
   - id: phase4-ollama
-    content: "Phase 4: Add /api/show detailed discovery and re-evaluate streaming for Ollama Cloud"
-    status: pending
+    content: "Phase 4: Add /api/show detailed discovery and re-evaluate streaming for Ollama Cloud (4b streaming DONE via native /api/chat provider; 4a discovery still pending)"
+    status: completed
   - id: phase5-isolation
-    content: "Phase 5: Isolate fork-specific code and create upstream sync CI workflow"
-    status: pending
+    content: "Phase 5: Isolate fork-specific code and create upstream sync CI workflow (5a isolation done, 5b upstream-sync-test.yml done)"
+    status: completed
 isProject: false
 ---
 
