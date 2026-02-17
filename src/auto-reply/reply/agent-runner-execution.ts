@@ -37,9 +37,9 @@ import { isSilentReplyText, SILENT_REPLY_TOKEN } from "../tokens.js";
 import {
   buildEmbeddedContextFromTemplate,
   buildTemplateSenderContext,
-  resolveEnforceFinalTag,
   resolveRunAuthProfile,
 } from "./agent-runner-utils.js";
+import { resolveEnforceFinalTag } from "./agent-runner-utils.js";
 import { type BlockReplyPipeline } from "./block-reply-pipeline.js";
 import { createBlockReplyDeliveryHandler } from "./reply-delivery.js";
 

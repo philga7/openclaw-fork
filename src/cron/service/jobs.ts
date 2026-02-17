@@ -14,26 +14,13 @@ import { computeNextRunAtMs } from "../schedule.js";
 import { normalizeHttpWebhookUrl } from "../webhook-url.js";
 import {
   normalizeOptionalAgentId,
+  normalizeOptionalSessionKey,
   normalizeOptionalText,
   normalizePayloadToSystemText,
   normalizeRequiredName,
 } from "./normalize.js";
 
 const STUCK_RUN_MS = 2 * 60 * 60 * 1000;
-
-/** Default max job duration (ms); used when job has no custom timeoutSeconds. */
-const DEFAULT_JOB_TIMEOUT_MS = 10 * 60_000;
-
-/** Minimum threshold for clearing stuck runningAtMs; avoids false positives for short jobs. */
-const MIN_STUCK_RUN_MS = 15 * 60 * 1000;
-
-function stuckRunThresholdMs(job: CronJob): number {
-  const jobMaxMs =
-    job.payload.kind === "agentTurn" && typeof job.payload.timeoutSeconds === "number"
-      ? job.payload.timeoutSeconds * 1_000
-      : DEFAULT_JOB_TIMEOUT_MS;
-  return Math.max(MIN_STUCK_RUN_MS, jobMaxMs * 1.5);
-}
 
 function resolveEveryAnchorMs(params: {
   schedule: { everyMs: number; anchorMs?: number };
@@ -312,6 +299,7 @@ export function createJob(state: CronServiceState, input: CronJobCreate): CronJo
   const job: CronJob = {
     id,
     agentId: normalizeOptionalAgentId(input.agentId),
+    sessionKey: normalizeOptionalSessionKey((input as { sessionKey?: unknown }).sessionKey),
     name: normalizeRequiredName(input.name),
     description: normalizeOptionalText(input.description),
     enabled,
@@ -380,6 +368,9 @@ export function applyJobPatch(job: CronJob, patch: CronJobPatch) {
   }
   if ("agentId" in patch) {
     job.agentId = normalizeOptionalAgentId((patch as { agentId?: unknown }).agentId);
+  }
+  if ("sessionKey" in patch) {
+    job.sessionKey = normalizeOptionalSessionKey((patch as { sessionKey?: unknown }).sessionKey);
   }
   assertSupportedJobSpec(job);
   assertDeliverySupport(job);

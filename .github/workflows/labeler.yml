@@ -23,7 +23,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - uses: actions/labeler@8558fd74291d67161a8a78ce36a881fa63b766a9 # v5
         with:
@@ -195,7 +195,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 # v1
         id: app-token
@@ -435,7 +435,7 @@ jobs:
   label-issues:
     permissions:
       issues: write
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - name: Apply maintainer or trusted-contributor label
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7

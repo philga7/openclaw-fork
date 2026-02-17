@@ -1,5 +1,5 @@
 import type { HeartbeatRunResult } from "../../infra/heartbeat-wake.js";
-import type { CronJob } from "../types.js";
+import type { CronJob, CronRunOutcome, CronRunStatus, CronRunTelemetry } from "../types.js";
 import type { CronEvent, CronServiceState } from "./state.js";
 import { DEFAULT_AGENT_ID } from "../../routing/session-key.js";
 import { resolveCronDeliveryPlan } from "../delivery.js";
@@ -16,7 +16,6 @@ import { ensureLoaded, persist } from "./store.js";
 const MAX_TIMER_DELAY_MS = 60_000;
 
 /** Throttle "timer armed" debug log; bursts can be dozens/hundreds per second (e.g. cron.list/update storm from UI or many clients). */
-const ARM_LOG_DEBOUNCE_MS = 1_000;
 let lastArmLog: { nextAt: number; delayMs: number; atMs: number } | null = null;
 
 /**
@@ -47,6 +46,13 @@ const ANTI_ZOMBIE_IDLE_MS = 60_000;
 /** How often the anti-zombie check-in runs. */
 const ANTI_ZOMBIE_CHECK_INTERVAL_MS = 60_000;
 
+type TimedCronRunOutcome = CronRunOutcome &
+  CronRunTelemetry & {
+    jobId: string;
+    startedAt: number;
+    endedAt: number;
+  };
+
 /**
  * Exponential backoff delays (in ms) indexed by consecutive error count.
  * After the last entry the delay stays constant.
@@ -73,7 +79,7 @@ function applyJobResult(
   state: CronServiceState,
   job: CronJob,
   result: {
-    status: "ok" | "error" | "skipped";
+    status: CronRunStatus;
     error?: string;
     startedAt: number;
     endedAt: number;
@@ -190,10 +196,7 @@ export function armTimer(state: CronServiceState) {
   const nowForLog = state.deps.nowMs();
   // Only log when nextAt or delay changed, so we avoid one line per second when something
   // (e.g. cron list/status) calls armTimer in a tight loop with the same schedule.
-  const skipLog =
-    lastArmLog &&
-    lastArmLog.nextAt === nextAt &&
-    lastArmLog.delayMs === clampedDelay;
+  const skipLog = lastArmLog && lastArmLog.nextAt === nextAt && lastArmLog.delayMs === clampedDelay;
   if (!skipLog) {
     state.deps.log.debug(
       { nextAt, delayMs: clampedDelay, clamped: delay > MAX_TIMER_DELAY_MS },
@@ -274,25 +277,7 @@ export async function onTimer(state: CronServiceState) {
       }));
     });
 
-    const results: Array<{
-      jobId: string;
-      status: "ok" | "error" | "skipped";
-      error?: string;
-      summary?: string;
-      sessionId?: string;
-      sessionKey?: string;
-      model?: string;
-      provider?: string;
-      usage?: {
-        input_tokens?: number;
-        output_tokens?: number;
-        total_tokens?: number;
-        cache_read_tokens?: number;
-        cache_write_tokens?: number;
-      };
-      startedAt: number;
-      endedAt: number;
-    }> = [];
+    const results: TimedCronRunOutcome[] = [];
 
     for (const { id, job } of dueJobs) {
       const startedAt = state.deps.nowMs();
@@ -496,22 +481,7 @@ export async function runDueJobs(state: CronServiceState) {
 async function executeJobCore(
   state: CronServiceState,
   job: CronJob,
-): Promise<{
-  status: "ok" | "error" | "skipped";
-  error?: string;
-  summary?: string;
-  sessionId?: string;
-  sessionKey?: string;
-  model?: string;
-  provider?: string;
-  usage?: {
-    input_tokens?: number;
-    output_tokens?: number;
-    total_tokens?: number;
-    cache_read_tokens?: number;
-    cache_write_tokens?: number;
-  };
-}> {
+): Promise<CronRunOutcome & CronRunTelemetry> {
   if (job.sessionTarget === "main") {
     const text = resolveJobPayloadTextForMain(job);
     if (!text) {
@@ -526,6 +496,7 @@ async function executeJobCore(
     }
     state.deps.enqueueSystemEvent(text, {
       agentId: job.agentId,
+      sessionKey: job.sessionKey,
       contextKey: `cron:${job.id}`,
     });
     if (job.wakeMode === "now" && state.deps.runHeartbeatOnce) {
@@ -537,7 +508,11 @@ async function executeJobCore(
 
       let heartbeatResult: HeartbeatRunResult;
       for (;;) {
-        heartbeatResult = await state.deps.runHeartbeatOnce({ reason, agentId: job.agentId });
+        heartbeatResult = await state.deps.runHeartbeatOnce({
+          reason,
+          agentId: job.agentId,
+          sessionKey: job.sessionKey,
+        });
         if (
           heartbeatResult.status !== "skipped" ||
           heartbeatResult.reason !== "requests-in-flight"
@@ -545,7 +520,11 @@ async function executeJobCore(
           break;
         }
         if (state.deps.nowMs() - waitStartedAt > maxWaitMs) {
-          state.deps.requestHeartbeatNow({ reason });
+          state.deps.requestHeartbeatNow({
+            reason,
+            agentId: job.agentId,
+            sessionKey: job.sessionKey,
+          });
           return { status: "ok", summary: text };
         }
         await delay(retryDelayMs);
@@ -559,7 +538,11 @@ async function executeJobCore(
         return { status: "error", error: heartbeatResult.reason, summary: text };
       }
     } else {
-      state.deps.requestHeartbeatNow({ reason: `cron:${job.id}` });
+      state.deps.requestHeartbeatNow({
+        reason: `cron:${job.id}`,
+        agentId: job.agentId,
+        sessionKey: job.sessionKey,
+      });
       return { status: "ok", summary: text };
     }
   }
@@ -587,10 +570,15 @@ async function executeJobCore(
       res.status === "error" ? `${prefix} (error): ${summaryText}` : `${prefix}: ${summaryText}`;
     state.deps.enqueueSystemEvent(label, {
       agentId: job.agentId,
+      sessionKey: job.sessionKey,
       contextKey: `cron:${job.id}`,
     });
     if (job.wakeMode === "now") {
-      state.deps.requestHeartbeatNow({ reason: `cron:${job.id}` });
+      state.deps.requestHeartbeatNow({
+        reason: `cron:${job.id}`,
+        agentId: job.agentId,
+        sessionKey: job.sessionKey,
+      });
     }
   }
 
@@ -625,21 +613,9 @@ export async function executeJob(
   emit(state, { jobId: job.id, action: "started", runAtMs: startedAt });
 
   let coreResult: {
-    status: "ok" | "error" | "skipped";
-    error?: string;
-    summary?: string;
-    sessionId?: string;
-    sessionKey?: string;
-    model?: string;
-    provider?: string;
-    usage?: {
-      input_tokens?: number;
-      output_tokens?: number;
-      total_tokens?: number;
-      cache_read_tokens?: number;
-      cache_write_tokens?: number;
-    };
-  };
+    status: CronRunStatus;
+  } & CronRunOutcome &
+    CronRunTelemetry;
   try {
     coreResult = await executeJobCore(state, job);
   } catch (err) {
@@ -666,21 +642,9 @@ function emitJobFinished(
   state: CronServiceState,
   job: CronJob,
   result: {
-    status: "ok" | "error" | "skipped";
-    error?: string;
-    summary?: string;
-    sessionId?: string;
-    sessionKey?: string;
-    model?: string;
-    provider?: string;
-    usage?: {
-      input_tokens?: number;
-      output_tokens?: number;
-      total_tokens?: number;
-      cache_read_tokens?: number;
-      cache_write_tokens?: number;
-    };
-  },
+    status: CronRunStatus;
+  } & CronRunOutcome &
+    CronRunTelemetry,
   runAtMs: number,
 ) {
   emit(state, {

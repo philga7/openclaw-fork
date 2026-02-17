@@ -19,9 +19,9 @@ import { registerAgentRunContext } from "../../infra/agent-events.js";
 import {
   buildEmbeddedContextFromTemplate,
   buildTemplateSenderContext,
-  resolveEnforceFinalTag,
   resolveRunAuthProfile,
 } from "./agent-runner-utils.js";
+import { resolveEnforceFinalTag } from "./agent-runner-utils.js";
 import {
   resolveMemoryFlushContextWindowTokens,
   resolveMemoryFlushPromptForRun,
