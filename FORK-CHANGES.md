@@ -126,6 +126,19 @@ Operational checklist when running this fork with [OpenClaw-Foundry](https://git
   - **`message:sent`**: fired after each Discord reply is delivered with context `channel`, `sessionId`, `replyText`.
   - Handlers can register for `"message"`, `"message:received"`, or `"message:sent"` as with other hook types. Telegram can be wired similarly in `src/telegram/bot-message-dispatch.ts` and delivery if needed.
 
+### Discord gateway stability (Phase 2)
+
+- **Reconnect ceiling and supervisor loop**
+  - Discord gateway reconnects are now effectively unbounded: `createDiscordGatewayPlugin` sets `reconnect: { maxAttempts: Infinity }` in `src/discord/monitor/gateway-plugin.ts` so Carbon’s exponential backoff keeps running instead of exhausting after 50 attempts.
+  - A supervisor wrapper `monitorDiscordProviderWithSupervisor` in `src/discord/monitor/provider.ts` (exported via `src/discord/monitor.ts` and wired into `src/plugins/runtime/index.ts`) restarts the Discord monitor when it exits with `"Max reconnect attempts"` or `"Fatal Gateway error"`, using exponential backoff (30s → 60s → 120s, capped at 5min) and respecting the gateway’s `abortSignal` at every step.
+  - Supervisor restarts are logged via the `discord/supervisor` subsystem logger so “Discord went deaf, but gateway stayed up” is visible in logs along with backoff timing and attempt count.
+- **Connection health watchdog**
+  - The Discord monitor now tracks a `lastSuccessfulHeartbeat` timestamp using gateway `metrics` events and runs a periodic watchdog timer (every 2 minutes) inside `monitorDiscordProvider`.
+  - When no metrics/heartbeat activity is observed for >5 minutes, the monitor logs a warning (`discord: gateway heartbeat stale for <N>s (no metrics events)`), giving an early signal for stalled or zombie gateway connections without changing shutdown semantics.
+- **Tests**
+  - `src/discord/monitor/provider.proxy.test.ts` asserts that the gateway plugin’s `reconnect.maxAttempts` is `Infinity` and keeps covering proxy behavior.
+  - `src/discord/monitor/provider.supervisor.test.ts` verifies that `monitorDiscordProviderWithSupervisor` returns immediately when the provided `abortSignal` is already aborted, ensuring the supervisor respects shutdown and does not spin up a new Discord session during gateway teardown.
+
 ### Upstream merge (Feb 2026) and session path fix
 
 - **Merge from openclaw/main** — Integrated 113 upstream commits (through early Feb 2026). Resolved 9 conflicts while keeping fork behavior: labeler uses `github.token` (no App) in label/label-issues jobs; stderr in tool errors + `after_tool_call` on errors in `pi-tool-definition-adapter.ts`; upstream safe skill sync dest + fork `baseDir` check in `skills/workspace.ts`; async `buildAgentSystemPrompt` tests in `system-prompt.test.ts`; fork `getLatestSessionTranscriptForAgent` plus upstream path validation/APIs in `config/sessions/paths.ts`; both proactive-compaction and upstream promptTokens test in `run.overflow-compaction.test.ts`; `/compact` `scope: "both"` in `commands-registry.data.ts`. Discord channel-fetch test expectation updated for upstream role-based routing.

@@ -100,7 +100,8 @@ type ResolveDiscordUserAllowlist =
   typeof import("../../discord/resolve-users.js").resolveDiscordUserAllowlist;
 type SendMessageDiscord = typeof import("../../discord/send.js").sendMessageDiscord;
 type SendPollDiscord = typeof import("../../discord/send.js").sendPollDiscord;
-type MonitorDiscordProvider = typeof import("../../discord/monitor.js").monitorDiscordProvider;
+type MonitorDiscordProvider =
+  typeof import("../../discord/monitor.js").monitorDiscordProviderWithSupervisor;
 type ListSlackDirectoryGroupsLive =
   typeof import("../../slack/directory-live.js").listSlackDirectoryGroupsLive;
 type ListSlackDirectoryPeersLive =

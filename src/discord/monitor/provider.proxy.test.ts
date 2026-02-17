@@ -23,7 +23,12 @@ const {
     GuildMembers: 1 << 7,
   } as const;
 
-  class GatewayPlugin {}
+  class GatewayPlugin {
+    options: unknown;
+    constructor(options?: unknown) {
+      this.options = options;
+    }
+  }
 
   class HttpsProxyAgent {
     static lastCreated: HttpsProxyAgent | undefined;
@@ -126,5 +131,24 @@ describe("createDiscordGatewayPlugin", () => {
     expect(Object.getPrototypeOf(plugin)).toBe(GatewayPlugin.prototype);
     expect(runtime.error).toHaveBeenCalled();
     expect(runtime.log).not.toHaveBeenCalled();
+  });
+
+  it("sets reconnect maxAttempts to Infinity by default", async () => {
+    const { createDiscordGatewayPlugin } = await import("./gateway-plugin.js");
+
+    const runtime = {
+      log: vi.fn(),
+      error: vi.fn(),
+      exit: vi.fn(() => {
+        throw new Error("exit");
+      }),
+    };
+
+    const plugin = createDiscordGatewayPlugin({
+      discordConfig: {},
+      runtime,
+    }) as unknown as { options?: { reconnect?: { maxAttempts?: unknown } } };
+
+    expect(plugin.options?.reconnect?.maxAttempts).toBe(Infinity);
   });
 });
