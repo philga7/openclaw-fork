@@ -1,5 +1,4 @@
 import type { AgentEvent, AgentMessage } from "@mariozechner/pi-agent-core";
-import type { EmbeddedPiSubscribeContext } from "./pi-embedded-subscribe.handlers.types.js";
 import { parseReplyDirectives } from "../auto-reply/reply/reply-directives.js";
 import { SILENT_REPLY_TOKEN } from "../auto-reply/tokens.js";
 import { emitAgentEvent } from "../infra/agent-events.js";
@@ -8,6 +7,7 @@ import {
   isMessagingToolDuplicateNormalized,
   normalizeTextForComparison,
 } from "./pi-embedded-helpers.js";
+import type { EmbeddedPiSubscribeContext } from "./pi-embedded-subscribe.handlers.types.js";
 import { appendRawStream } from "./pi-embedded-subscribe.raw-stream.js";
 import {
   extractAssistantText,
@@ -82,7 +82,40 @@ export function handleMessageUpdate(
       : undefined;
   const evtType = typeof assistantRecord?.type === "string" ? assistantRecord.type : "";
 
-  if (evtType !== "text_delta" && evtType !== "text_start" && evtType !== "text_end") {
+  const isTextEvent =
+    evtType === "text_delta" || evtType === "text_start" || evtType === "text_end";
+  const isThinkingEvent =
+    evtType === "thinking_start" || evtType === "thinking_delta" || evtType === "thinking_end";
+
+  if (!isTextEvent && !isThinkingEvent) {
+    return;
+  }
+
+  // Native thinking events (reasoning_content from OpenAI-compatible providers like
+  // GLM-5, DeepSeek-R1, Ollama reasoning models). pi-ai converts these into
+  // thinking_start/thinking_delta/thinking_end which pi-agent-core wraps as
+  // message_update events. Stream reasoning content and keep the typing TTL alive.
+  if (isThinkingEvent) {
+    const delta = typeof assistantRecord?.delta === "string" ? assistantRecord.delta : "";
+    appendRawStream({
+      ts: Date.now(),
+      event: "assistant_thinking_stream",
+      runId: ctx.params.runId,
+      sessionId: (ctx.params.session as { id?: string }).id,
+      evtType,
+      delta,
+    });
+
+    if (ctx.state.streamReasoning && delta) {
+      const accumulated = extractAssistantThinking(msg);
+      if (accumulated) {
+        ctx.emitReasoningStream(accumulated);
+      }
+    }
+
+    if (evtType === "thinking_end") {
+      void ctx.params.onReasoningEnd?.();
+    }
     return;
   }
 
