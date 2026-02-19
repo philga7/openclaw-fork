@@ -148,6 +148,110 @@ describe("buildAssistantMessage", () => {
     expect(toolCall.id).toMatch(/^ollama_call_[0-9a-f-]{36}$/);
   });
 
+  it("drops tool calls with null function name", () => {
+    const response = {
+      model: "glm-5",
+      created_at: "2026-01-01T00:00:00Z",
+      message: {
+        role: "assistant" as const,
+        content: "",
+        tool_calls: [
+          { function: { name: null as unknown as string, arguments: { x: 1 } } },
+          { function: { name: "bash", arguments: { command: "ls" } } },
+        ],
+      },
+      done: true,
+    };
+    const result = buildAssistantMessage(response, modelInfo);
+    const toolCalls = result.content.filter((b) => b.type === "toolCall");
+    expect(toolCalls).toHaveLength(1);
+    expect((toolCalls[0] as { name: string }).name).toBe("bash");
+  });
+
+  it("drops tool calls with empty function name", () => {
+    const response = {
+      model: "glm-5",
+      created_at: "2026-01-01T00:00:00Z",
+      message: {
+        role: "assistant" as const,
+        content: "text",
+        tool_calls: [{ function: { name: "", arguments: { a: 1 } } }],
+      },
+      done: true,
+    };
+    const result = buildAssistantMessage(response, modelInfo);
+    expect(result.content).toHaveLength(1);
+    expect(result.content[0].type).toBe("text");
+    expect(result.stopReason).toBe("stop");
+  });
+
+  it("drops tool calls with non-object arguments", () => {
+    const response = {
+      model: "glm-5",
+      created_at: "2026-01-01T00:00:00Z",
+      message: {
+        role: "assistant" as const,
+        content: "",
+        tool_calls: [
+          {
+            function: {
+              name: "bash",
+              arguments: "not json{{{" as unknown as Record<string, unknown>,
+            },
+          },
+        ],
+      },
+      done: true,
+    };
+    const result = buildAssistantMessage(response, modelInfo);
+    const toolCalls = result.content.filter((b) => b.type === "toolCall");
+    expect(toolCalls).toHaveLength(0);
+  });
+
+  it("parses stringified JSON arguments into objects", () => {
+    const response = {
+      model: "glm-5",
+      created_at: "2026-01-01T00:00:00Z",
+      message: {
+        role: "assistant" as const,
+        content: "",
+        tool_calls: [
+          {
+            function: {
+              name: "bash",
+              arguments: '{"command":"ls"}' as unknown as Record<string, unknown>,
+            },
+          },
+        ],
+      },
+      done: true,
+    };
+    const result = buildAssistantMessage(response, modelInfo);
+    const toolCalls = result.content.filter((b) => b.type === "toolCall");
+    expect(toolCalls).toHaveLength(1);
+    expect((toolCalls[0] as { arguments: Record<string, unknown> }).arguments).toEqual({
+      command: "ls",
+    });
+  });
+
+  it("drops tool calls with null function object", () => {
+    const response = {
+      model: "glm-5",
+      created_at: "2026-01-01T00:00:00Z",
+      message: {
+        role: "assistant" as const,
+        content: "text",
+        tool_calls: [
+          { function: null as unknown as { name: string; arguments: Record<string, unknown> } },
+        ],
+      },
+      done: true,
+    };
+    const result = buildAssistantMessage(response, modelInfo);
+    expect(result.content).toHaveLength(1);
+    expect(result.content[0].type).toBe("text");
+  });
+
   it("sets all costs to zero for local models", () => {
     const response = {
       model: "qwen3:32b",

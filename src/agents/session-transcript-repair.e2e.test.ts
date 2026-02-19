@@ -268,4 +268,96 @@ describe("sanitizeToolCallInputs", () => {
       : [];
     expect(types).toEqual(["text", "toolUse"]);
   });
+
+  it("drops tool calls with string arguments that are not valid JSON objects", () => {
+    const input = [
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "toolCall",
+            id: "call_bad",
+            name: "bash",
+            arguments: "not json{{{",
+          },
+          {
+            type: "toolCall",
+            id: "call_ok",
+            name: "read",
+            arguments: { path: "/tmp/a" },
+          },
+        ],
+      },
+    ] as unknown as AgentMessage[];
+
+    const out = sanitizeToolCallInputs(input);
+    const assistant = out[0] as Extract<AgentMessage, { role: "assistant" }>;
+    const ids = Array.isArray(assistant.content)
+      ? assistant.content
+          .filter((b) => (b as { type?: unknown }).type === "toolCall")
+          .map((b) => (b as { id?: unknown }).id)
+      : [];
+    expect(ids).toEqual(["call_ok"]);
+  });
+
+  it("accepts string arguments that parse to a valid JSON object", () => {
+    const input = [
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "toolCall",
+            id: "call_str",
+            name: "bash",
+            arguments: '{"command":"ls"}',
+          },
+        ],
+      },
+    ] as unknown as AgentMessage[];
+
+    const out = sanitizeToolCallInputs(input);
+    const assistant = out[0] as Extract<AgentMessage, { role: "assistant" }>;
+    const toolCalls = Array.isArray(assistant.content)
+      ? assistant.content.filter((b) => (b as { type?: unknown }).type === "toolCall")
+      : [];
+    expect(toolCalls).toHaveLength(1);
+  });
+
+  it("drops tool calls with null arguments", () => {
+    const input = [
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "toolCall",
+            id: "call_null",
+            name: "bash",
+            arguments: null,
+          },
+        ],
+      },
+    ] as unknown as AgentMessage[];
+
+    const out = sanitizeToolCallInputs(input);
+    expect(out).toHaveLength(0);
+  });
+
+  it("drops tool calls with array arguments (not a plain object)", () => {
+    const input = [
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "toolCall",
+            id: "call_arr",
+            name: "bash",
+            arguments: ["a", "b"],
+          },
+        ],
+      },
+    ] as unknown as AgentMessage[];
+
+    const out = sanitizeToolCallInputs(input);
+    expect(out).toHaveLength(0);
+  });
 });

@@ -20,11 +20,34 @@ function isToolCallBlock(block: unknown): block is ToolCallBlock {
   );
 }
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
 function hasToolCallInput(block: ToolCallBlock): boolean {
-  const hasInput = "input" in block ? block.input !== undefined && block.input !== null : false;
-  const hasArguments =
-    "arguments" in block ? block.arguments !== undefined && block.arguments !== null : false;
-  return hasInput || hasArguments;
+  const rawInput = "input" in block ? block.input : undefined;
+  const rawArgs = "arguments" in block ? block.arguments : undefined;
+
+  // Accept objects directly; try to parse strings as JSON objects.
+  for (const raw of [rawInput, rawArgs]) {
+    if (raw === undefined || raw === null) {
+      continue;
+    }
+    if (isPlainObject(raw)) {
+      return true;
+    }
+    if (typeof raw === "string") {
+      try {
+        const parsed: unknown = JSON.parse(raw);
+        if (isPlainObject(parsed)) {
+          return true;
+        }
+      } catch {
+        // unparseable string → not valid tool call input
+      }
+    }
+  }
+  return false;
 }
 
 function hasNonEmptyStringField(value: unknown): boolean {
@@ -85,6 +108,22 @@ export function stripToolResultDetails(messages: AgentMessage[]): AgentMessage[]
   return touched ? out : messages;
 }
 
+function describeToolCallDefect(block: ToolCallBlock): string {
+  const issues: string[] = [];
+  if (!hasToolCallId(block)) {
+    issues.push("missing id");
+  }
+  if (!hasToolCallName(block)) {
+    issues.push(`invalid name (${typeof block.name === "string" ? "empty" : typeof block.name})`);
+  }
+  if (!hasToolCallInput(block)) {
+    const rawInput =
+      "input" in block ? block.input : "arguments" in block ? block.arguments : undefined;
+    issues.push(`invalid arguments (${rawInput === null ? "null" : typeof rawInput})`);
+  }
+  return issues.join(", ");
+}
+
 export function repairToolCallInputs(messages: AgentMessage[]): ToolCallInputRepairReport {
   let droppedToolCalls = 0;
   let droppedAssistantMessages = 0;
@@ -110,6 +149,9 @@ export function repairToolCallInputs(messages: AgentMessage[]): ToolCallInputRep
         isToolCallBlock(block) &&
         (!hasToolCallInput(block) || !hasToolCallId(block) || !hasToolCallName(block))
       ) {
+        const defect = describeToolCallDefect(block);
+        const toolName = typeof block.name === "string" && block.name ? block.name : "<unknown>";
+        console.warn(`[transcript-repair] Dropping malformed tool call "${toolName}": ${defect}`);
         droppedToolCalls += 1;
         droppedInMessage += 1;
         changed = true;
@@ -120,6 +162,9 @@ export function repairToolCallInputs(messages: AgentMessage[]): ToolCallInputRep
 
     if (droppedInMessage > 0) {
       if (nextContent.length === 0) {
+        console.warn(
+          `[transcript-repair] Dropping entire assistant message: all ${droppedInMessage} tool call(s) were malformed`,
+        );
         droppedAssistantMessages += 1;
         changed = true;
         continue;

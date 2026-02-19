@@ -65,6 +65,35 @@ describe("failover-error", () => {
     expect(err?.status).toBe(400);
   });
 
+  it("classifies Ollama Error with .status property as format", () => {
+    const err = Object.assign(new Error("Ollama API error 400: invalid tool call in messages"), {
+      status: 400,
+    });
+    expect(resolveFailoverReasonFromError(err)).toBe("format");
+    const failover = coerceToFailoverError(err, { provider: "ollama", model: "glm-5" });
+    expect(failover?.reason).toBe("format");
+    expect(failover?.status).toBe(400);
+    expect(failover?.provider).toBe("ollama");
+  });
+
+  it("classifies Ollama 400 error by message when status property is absent", () => {
+    expect(resolveFailoverReasonFromError({ message: "Ollama API error 400: bad request" })).toBe(
+      "format",
+    );
+  });
+
+  it("classifies 'invalid tool call' message as format", () => {
+    expect(resolveFailoverReasonFromError({ message: "invalid tool call: missing name" })).toBe(
+      "format",
+    );
+  });
+
+  it("classifies 'malformed tool' message as format", () => {
+    expect(
+      resolveFailoverReasonFromError({ message: "malformed assistant tool call in history" }),
+    ).toBe("format");
+  });
+
   it("describes non-Error values consistently", () => {
     const described = describeFailoverError(123);
     expect(described.message).toBe("123");

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { StreamFn } from "@mariozechner/pi-agent-core";
 import type {
   AssistantMessage,
@@ -8,7 +9,6 @@ import type {
   Usage,
 } from "@mariozechner/pi-ai";
 import { createAssistantMessageEventStream } from "@mariozechner/pi-ai";
-import { randomUUID } from "node:crypto";
 
 export const OLLAMA_NATIVE_BASE_URL = "http://127.0.0.1:11434";
 
@@ -186,6 +186,34 @@ function extractOllamaTools(tools: Tool[] | undefined): OllamaTool[] {
 
 // ── Response conversion ─────────────────────────────────────────────────────
 
+function coerceToolCallArguments(raw: unknown): Record<string, unknown> | null {
+  if (raw !== null && typeof raw === "object" && !Array.isArray(raw)) {
+    return raw as Record<string, unknown>;
+  }
+  if (typeof raw === "string") {
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      // unparseable → malformed
+    }
+  }
+  return null;
+}
+
+function isValidOllamaToolCall(
+  tc: OllamaToolCall,
+): tc is OllamaToolCall & { function: { name: string; arguments: Record<string, unknown> } } {
+  return (
+    tc.function !== null &&
+    typeof tc.function === "object" &&
+    typeof tc.function.name === "string" &&
+    tc.function.name.trim().length > 0
+  );
+}
+
 export function buildAssistantMessage(
   response: OllamaChatResponse,
   modelInfo: { api: string; provider: string; id: string },
@@ -203,17 +231,30 @@ export function buildAssistantMessage(
   const toolCalls = response.message.tool_calls;
   if (toolCalls && toolCalls.length > 0) {
     for (const tc of toolCalls) {
+      if (!isValidOllamaToolCall(tc)) {
+        console.warn(
+          `[ollama-stream] Dropping malformed tool call from ${modelInfo.id}: missing or null function/name`,
+        );
+        continue;
+      }
+      const args = coerceToolCallArguments(tc.function.arguments);
+      if (args === null) {
+        console.warn(
+          `[ollama-stream] Dropping tool call "${tc.function.name}" from ${modelInfo.id}: arguments not a valid object`,
+        );
+        continue;
+      }
       content.push({
         type: "toolCall",
         id: `ollama_call_${randomUUID()}`,
         name: tc.function.name,
-        arguments: tc.function.arguments,
+        arguments: args,
       });
     }
   }
 
-  const hasToolCalls = toolCalls && toolCalls.length > 0;
-  const stopReason: StopReason = hasToolCalls ? "toolUse" : "stop";
+  const hasValidToolCalls = content.some((c) => c.type === "toolCall");
+  const stopReason: StopReason = hasValidToolCalls ? "toolUse" : "stop";
 
   const usage: Usage = {
     input: response.prompt_eval_count ?? 0,
@@ -337,7 +378,9 @@ export function createOllamaStreamFn(baseUrl: string): StreamFn {
 
         if (!response.ok) {
           const errorText = await response.text().catch(() => "unknown error");
-          throw new Error(`Ollama API error ${response.status}: ${errorText}`);
+          throw Object.assign(new Error(`Ollama API error ${response.status}: ${errorText}`), {
+            status: response.status,
+          });
         }
 
         if (!response.body) {
