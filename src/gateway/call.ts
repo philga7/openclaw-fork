@@ -135,8 +135,8 @@ export function buildGatewayConnectionDetails(
   const remoteUrl =
     typeof remote?.url === "string" && remote.url.trim().length > 0 ? remote.url.trim() : undefined;
   const remoteMisconfigured = isRemoteMode && !urlOverride && !remoteUrl;
-  const url = urlOverride || remoteUrl || localUrl;
-  const urlSource = urlOverride
+  let url = urlOverride || remoteUrl || localUrl;
+  let urlSource = urlOverride
     ? "cli --url"
     : remoteUrl
       ? "config gateway.remote.url"
@@ -151,6 +151,23 @@ export function buildGatewayConnectionDetails(
     ? "Warn: gateway.mode=remote but gateway.remote.url is missing; set gateway.remote.url or switch gateway.mode=local."
     : undefined;
   const bindDetail = !urlOverride && !remoteUrl ? `Bind: ${bindMode}` : undefined;
+
+  // Same-machine fix: when the resolved URL is ws:// to this host's LAN IP, use loopback instead
+  // so the connection stays on-box and passes the plaintext security check (CWE-319).
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol === "ws:") {
+      const lanIPv4Self = pickPrimaryLanIPv4();
+      const hostname = parsed.hostname.trim().toLowerCase();
+      if (lanIPv4Self && hostname === lanIPv4Self.toLowerCase()) {
+        const port = parsed.port || String(localPort);
+        url = `ws://127.0.0.1:${port}`;
+        urlSource = "local loopback (same host)";
+      }
+    }
+  } catch {
+    // leave url and urlSource unchanged
+  }
 
   // Security check: block ALL insecure ws:// to non-loopback addresses (CWE-319, CVSS 9.8)
   // This applies to the FINAL resolved URL, regardless of source (config, CLI override, etc).
