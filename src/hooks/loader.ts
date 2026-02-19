@@ -7,6 +7,7 @@
  */
 
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import type { OpenClawConfig } from "../config/config.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { isPathInsideWithRealpath } from "../security/scan-paths.js";
