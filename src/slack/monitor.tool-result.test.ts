@@ -311,18 +311,54 @@ describe("monitorSlackProvider tool results", () => {
     };
     const setStatus = client.assistant?.threads?.setStatus;
     expect(setStatus).toHaveBeenCalledTimes(2);
+    // Bot name comes from users.info mock (display_name: "Ada" in test helpers).
     expect(setStatus).toHaveBeenNthCalledWith(1, {
       token: "bot-token",
       channel_id: "C1",
       thread_ts: "123",
-      status: "is typing...",
+      status: "Ada is thinking...",
+      loading_messages: ["Ada is thinking..."],
     });
     expect(setStatus).toHaveBeenNthCalledWith(2, {
       token: "bot-token",
       channel_id: "C1",
       thread_ts: "123",
       status: "",
+      loading_messages: undefined,
     });
+  });
+
+  it("updates assistant thread status for reasoning and tool phases", async () => {
+    replyMock.mockImplementation(async (...args: unknown[]) => {
+      const opts = (args[1] ?? {}) as {
+        onReplyStart?: () => Promise<void> | void;
+        onReasoningStream?: () => Promise<void> | void;
+        onToolStart?: (p: { name?: string }) => Promise<void> | void;
+      };
+      await opts?.onReplyStart?.();
+      await opts?.onReasoningStream?.();
+      await opts?.onToolStart?.({ name: "web_search" });
+      // Wait for throttle (600ms) so "Running: web_search..." is sent before idle.
+      await new Promise((r) => setTimeout(r, 650));
+      return { text: "final reply" };
+    });
+
+    await runSlackMessageOnce(monitorSlackProvider, {
+      event: makeSlackMessageEvent(),
+    });
+
+    const client = getSlackClient() as {
+      assistant?: { threads?: { setStatus?: ReturnType<typeof vi.fn> } };
+    };
+    const setStatus = client.assistant?.threads?.setStatus;
+    expect(setStatus).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "Ada is thinking..." }),
+    );
+    expect(setStatus).toHaveBeenCalledWith(expect.objectContaining({ status: "Thinking..." }));
+    expect(setStatus).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "Running: web_search..." }),
+    );
+    expect(setStatus).toHaveBeenLastCalledWith(expect.objectContaining({ status: "" }));
   });
 
   async function expectMentionPatternMessageAccepted(text: string): Promise<void> {

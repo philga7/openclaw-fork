@@ -137,6 +137,18 @@ Operational checklist when running this fork with [OpenClaw-Foundry](https://git
   - **`message:sent`**: fired after each Discord reply is delivered with context `channel`, `sessionId`, `replyText`.
   - Handlers can register for `"message"`, `"message:received"`, or `"message:sent"` as with other hook types. Telegram can be wired similarly in `src/telegram/bot-message-dispatch.ts` and delivery if needed.
 
+### Slack dynamic status (typing and phase)
+
+- **Thread status reflects gateway phase** — The Slack assistant thread status (the line above the thread that shows “is typing…” / loading) now updates to show what the gateway is doing:
+  - **On reply start:** `"{bot display name} is thinking..."` (bot name from `users.info` via `resolveUserName(botUserId)`; fallback `"Assistant"`). Avoids redundancy with Slack’s built-in “… is typing” indicator below the input.
+  - **Reasoning stream:** `"Thinking..."`
+  - **Tool start:** `"Running: {toolName}..."` (e.g. `"Running: web_search..."`); fallback `"Running: tool..."`
+  - **Assistant message start:** `"Responding..."` (when not using native streaming)
+  - **On idle:** Status is cleared; any pending throttled update is cancelled.
+- **Throttling** — Phase updates are throttled (600ms) in `src/slack/monitor/message-handler/dispatch.ts` so rapid tool/reasoning events do not hammer `assistant.threads.setStatus`. The last requested status is sent when the throttle window passes.
+- **Loading messages** — A single `loading_messages` entry is passed to `assistant.threads.setStatus` so Slack does not rotate through its default set of four messages; the status line shows one consistent line.
+- **Docs** — [docs/channels/slack-status-updates.md](docs/channels/slack-status-updates.md) describes the implementation; [docs/channels/slack.md](docs/channels/slack.md) mentions typing indicator requirements and draft/stream mode. Branch: `feature/slack-dynamic-status`.
+
 ### Discord gateway stability (Phase 2)
 
 - **Reconnect ceiling and supervisor loop**

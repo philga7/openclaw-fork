@@ -290,7 +290,7 @@ Available action groups in current Slack tooling:
 - Message edits/deletes/thread broadcasts are mapped into system events.
 - Reaction add/remove events are mapped into system events.
 - Member join/leave, channel created/renamed, and pin add/remove events are mapped into system events.
-- Assistant thread status updates (for "is typing..." indicators in threads) use `assistant.threads.setStatus` and require bot scope `assistant:write`.
+- Assistant thread status updates (for "is typing..." indicators in threads) use `assistant.threads.setStatus` and require bot scope `assistant:write`. OpenClaw passes a single `loading_messages` entry so Slack shows one status line instead of rotating through its default set of messages.
 - `channel_id_changed` can migrate channel config keys when `configWrites` is enabled.
 - Channel topic/purpose metadata is treated as untrusted context and can be injected into routing context.
 - Block actions and modal interactions emit structured `Slack interaction: ...` system events with rich payload fields:
@@ -486,6 +486,8 @@ channels:
 - End of reply finalizes stream (`chat.stopStream`).
 - Media and non-text payloads fall back to normal delivery.
 - If streaming fails mid-reply, OpenClaw falls back to normal delivery for remaining payloads.
+
+When native streaming is disabled (`streaming: false`), a draft message is updated as the reply is built. The `streamMode` option controls that draft: `replace` (default) shows live reply text; `status_final` shows a short cycling "Status: thinking." line; `append` appends chunks. To avoid any draft and only see the typing indicator plus final reply, keep streaming enabled.
 
 ## Configuration reference pointers
 
