@@ -22,6 +22,10 @@ Explicit listing of changes in this fork relative to upstream [OpenClaw](https:/
   - Root [README.md](README.md): “About this repository” section describing the fork, ClawdBot-Next integration, [docs/MAINTENANCE.md](docs/MAINTENANCE.md) link, and sync workflow link.
   - This file: explicit listing of fork changes and commit history.
   - [.agent/workflows/update_clawdbot.md](.agent/workflows/update_clawdbot.md): push policy and link to this file.
+  - **Upstream merge documentation:**
+    - [docs/MERGE_IMPACT_ANALYSIS.md](docs/MERGE_IMPACT_ANALYSIS.md): Analysis of upstream changes and their impact on the fork.
+    - [docs/ARTIFACT_MIGRATION_GUIDE.md](docs/ARTIFACT_MIGRATION_GUIDE.md): Guide to where removed artifacts are moving and how to preserve fork-specific files.
+    - [docs/FORK_FILES_CLARIFICATION.md](docs/FORK_FILES_CLARIFICATION.md): Clarification on fork-only files during merge and the difference between maintainer skills and runtime skills.
 - **Maintenance runbook**
   - [docs/MAINTENANCE.md](docs/MAINTENANCE.md): fork update workflow, stop-before-rebuild, avoiding `openclaw doctor`/`gateway install` overwrites, health-check script for VPS/repo installs, and **Why skills.json can disappear** (agent running `git clean -fd` in repo workspace; restore via `pnpm build`; gateway fallback loads from source when dist copy is missing).
 
