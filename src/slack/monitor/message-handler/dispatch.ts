@@ -22,6 +22,8 @@ import { resolveSlackThreadTargets } from "../../threading.js";
 import { createSlackReplyDeliveryPlan, deliverReplies, resolveSlackThreadTs } from "../replies.js";
 import type { PreparedSlackMessage } from "./types.js";
 
+const SLACK_STATUS_THROTTLE_MS = 600;
+
 function hasMedia(payload: ReplyPayload): boolean {
   return Boolean(payload.mediaUrl) || (payload.mediaUrls?.length ?? 0) > 0;
 }
@@ -88,6 +90,49 @@ export async function dispatchPreparedSlackMessage(prepared: PreparedSlackMessag
   const incomingThreadTs = message.thread_ts;
   let didSetStatus = false;
 
+  // Throttle phase status updates so we don't hammer assistant.threads.setStatus.
+  const statusThrottle = {
+    lastSentAt: 0,
+    pending: null as string | null,
+    timer: null as ReturnType<typeof setTimeout> | null,
+  };
+  const scheduleStatusUpdate = (status: string) => {
+    if (!didSetStatus || !statusThreadTs) {
+      return;
+    }
+    statusThrottle.pending = status;
+    const flush = () => {
+      if (statusThrottle.timer) {
+        clearTimeout(statusThrottle.timer);
+        statusThrottle.timer = null;
+      }
+      const toSend = statusThrottle.pending;
+      statusThrottle.pending = null;
+      if (toSend == null) {
+        return;
+      }
+      statusThrottle.lastSentAt = Date.now();
+      ctx
+        .setSlackThreadStatus({
+          channelId: message.channel,
+          threadTs: statusThreadTs,
+          status: toSend,
+        })
+        .catch((err) => {
+          logVerbose(`slack status update failed for ${message.channel}: ${String(err)}`);
+        });
+    };
+    const now = Date.now();
+    const elapsed = now - statusThrottle.lastSentAt;
+    if (elapsed >= SLACK_STATUS_THROTTLE_MS && !statusThrottle.timer) {
+      flush();
+      return;
+    }
+    if (!statusThrottle.timer) {
+      statusThrottle.timer = setTimeout(flush, Math.max(0, SLACK_STATUS_THROTTLE_MS - elapsed));
+    }
+  };
+
   // Shared mutable ref for "replyToMode=first". Both tool + auto-reply flows
   // mark this to ensure only the first reply is threaded.
   const hasRepliedRef = { value: false };
@@ -102,10 +147,12 @@ export async function dispatchPreparedSlackMessage(prepared: PreparedSlackMessag
   const typingCallbacks = createTypingCallbacks({
     start: async () => {
       didSetStatus = true;
+      const botName = (await ctx.resolveUserName(ctx.botUserId)).name?.trim() || "Assistant";
+      const status = `${botName} is thinking...`;
       await ctx.setSlackThreadStatus({
         channelId: message.channel,
         threadTs: statusThreadTs,
-        status: "is typing...",
+        status,
       });
     },
     stop: async () => {
@@ -113,6 +160,11 @@ export async function dispatchPreparedSlackMessage(prepared: PreparedSlackMessag
         return;
       }
       didSetStatus = false;
+      if (statusThrottle.timer) {
+        clearTimeout(statusThrottle.timer);
+        statusThrottle.timer = null;
+        statusThrottle.pending = null;
+      }
       await ctx.setSlackThreadStatus({
         channelId: message.channel,
         threadTs: statusThreadTs,
@@ -366,9 +418,17 @@ export async function dispatchPreparedSlackMessage(prepared: PreparedSlackMessag
         : async (payload) => {
             updateDraftFromPartial(payload.text);
           },
+      onReasoningStream: () => {
+        scheduleStatusUpdate("Thinking...");
+      },
+      onToolStart: (payload) => {
+        const name = payload.name?.trim() || "tool";
+        scheduleStatusUpdate(`Running: ${name}...`);
+      },
       onAssistantMessageStart: useStreaming
         ? undefined
         : async () => {
+            scheduleStatusUpdate("Responding...");
             if (hasStreamedMessage) {
               draftStream.forceNewMessage();
               hasStreamedMessage = false;
