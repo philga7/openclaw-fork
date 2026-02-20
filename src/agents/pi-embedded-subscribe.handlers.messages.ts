@@ -270,8 +270,9 @@ export function handleMessageEnd(
     rawThinking: extractAssistantThinking(assistantMessage),
   });
 
+  const _strippedText = ctx.stripBlockTags(rawText, { thinking: false, final: false });
   const text = resolveSilentReplyFallbackText({
-    text: ctx.stripBlockTags(rawText, { thinking: false, final: false }),
+    text: _strippedText,
     messagingToolSentTexts: ctx.state.messagingToolSentTexts,
   });
   const rawThinking =

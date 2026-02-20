@@ -223,12 +223,23 @@ export function buildEmbeddedRunPayloads(params: {
     }
     return isRawApiErrorPayload(trimmed);
   };
+  const thinkingOnlyFallback =
+    !params.assistantTexts.length &&
+    !fallbackAnswerText &&
+    !lastAssistantErrored &&
+    params.lastAssistant?.stopReason === "stop" &&
+    params.lastAssistant
+      ? extractAssistantThinking(params.lastAssistant)
+      : "";
+
   const answerTexts = (
     params.assistantTexts.length
       ? params.assistantTexts
       : fallbackAnswerText
         ? [fallbackAnswerText]
-        : []
+        : thinkingOnlyFallback
+          ? ["I thought about this but wasn't able to formulate a response. Please try again."]
+          : []
   ).filter((text) => !shouldSuppressRawErrorText(text));
 
   let hasUserFacingAssistantReply = false;

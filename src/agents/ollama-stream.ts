@@ -396,12 +396,9 @@ export function createOllamaStreamFn(baseUrl: string): StreamFn {
           if (chunk.message?.content) {
             accumulatedContent += chunk.message.content;
           } else if (chunk.message?.reasoning) {
-            // Qwen 3 reasoning mode: content may be empty, output in reasoning
             accumulatedContent += chunk.message.reasoning;
           }
 
-          // Ollama sends tool_calls in intermediate (done:false) chunks,
-          // NOT in the final done:true chunk. Collect from all chunks.
           if (chunk.message?.tool_calls) {
             accumulatedToolCalls.push(...chunk.message.tool_calls);
           }
