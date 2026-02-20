@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import type { Bot } from "grammy";
 import { createDraftStreamLoop } from "../channels/draft-stream-loop.js";
 import { buildTelegramThreadParams, type TelegramThreadSpec } from "./bot/helpers.js";
@@ -150,9 +151,39 @@ export function createTelegramDraftStream(params: {
     const messageId = streamMessageId;
     streamMessageId = undefined;
     if (typeof messageId !== "number") {
+      // #region agent log
+      try {
+        fs.appendFileSync(
+          "/tmp/openclaw-debug-15b692.log",
+          JSON.stringify({
+            sessionId: "15b692",
+            hypothesisId: "H6",
+            location: "draft-stream.ts:clear:noMsgId",
+            message: "clear called but no messageId",
+            data: { chatId },
+            timestamp: Date.now(),
+          }) + "\n",
+        );
+      } catch {}
+      // #endregion
       return;
     }
     try {
+      // #region agent log
+      try {
+        fs.appendFileSync(
+          "/tmp/openclaw-debug-15b692.log",
+          JSON.stringify({
+            sessionId: "15b692",
+            hypothesisId: "H6",
+            location: "draft-stream.ts:clear:deleting",
+            message: "DELETING telegram message",
+            data: { chatId, messageId },
+            timestamp: Date.now(),
+          }) + "\n",
+        );
+      } catch {}
+      // #endregion
       await params.api.deleteMessage(chatId, messageId);
       params.log?.(`telegram stream preview deleted (chat=${chatId}, message=${messageId})`);
     } catch (err) {

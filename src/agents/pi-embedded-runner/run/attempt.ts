@@ -632,6 +632,29 @@ export async function runEmbeddedAttempt(
           typeof providerConfig?.baseUrl === "string" ? providerConfig.baseUrl.trim() : "";
         const ollamaBaseUrl = modelBaseUrl || providerBaseUrl || OLLAMA_NATIVE_BASE_URL;
         activeSession.agent.streamFn = createOllamaStreamFn(ollamaBaseUrl);
+        // #region agent log
+        try {
+          const _fsSync = await import("node:fs");
+          _fsSync.default.appendFileSync(
+            "/tmp/openclaw-debug-15b692.log",
+            JSON.stringify({
+              sessionId: "15b692",
+              hypothesisId: "H14",
+              location: "attempt.ts:streamFnAssignment",
+              message: "stream function assigned",
+              data: {
+                api: params.model.api,
+                provider: params.model.provider,
+                modelId: params.modelId,
+                ollamaBaseUrl,
+                hasCacheTrace: !!cacheTrace,
+                hasPayloadLogger: !!anthropicPayloadLogger,
+              },
+              timestamp: Date.now(),
+            }) + "\n",
+          );
+        } catch {}
+        // #endregion
       } else {
         // Force a stable streamFn reference so vitest can reliably mock @mariozechner/pi-ai.
         activeSession.agent.streamFn = streamSimple;

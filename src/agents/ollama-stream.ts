@@ -336,6 +336,31 @@ export function createOllamaStreamFn(baseUrl: string): StreamFn {
     const stream = createAssistantMessageEventStream();
 
     const run = async () => {
+      // #region agent log
+      try {
+        fs.appendFileSync(
+          "/tmp/openclaw-debug-15b692.log",
+          JSON.stringify({
+            sessionId: "15b692",
+            hypothesisId: "H11,H12,H13,H14",
+            location: "ollama-stream.ts:runStart",
+            message: "ollama stream run started",
+            data: {
+              modelId: model.id,
+              provider: model.provider,
+              api: model.api,
+              chatUrl,
+              hasSignal: !!options?.signal,
+              signalAborted: options?.signal?.aborted,
+              messageCount: (context.messages ?? []).length,
+              hasSystemPrompt: !!context.systemPrompt,
+              toolCount: (context.tools ?? []).length,
+            },
+            timestamp: Date.now(),
+          }) + "\n",
+        );
+      } catch {}
+      // #endregion
       try {
         const ollamaMessages = convertToOllamaMessages(
           context.messages ?? [],
@@ -377,8 +402,48 @@ export function createOllamaStreamFn(baseUrl: string): StreamFn {
           signal: options?.signal,
         });
 
+        // #region agent log
+        try {
+          fs.appendFileSync(
+            "/tmp/openclaw-debug-15b692.log",
+            JSON.stringify({
+              sessionId: "15b692",
+              hypothesisId: "H11,H12",
+              location: "ollama-stream.ts:fetchResponse",
+              message: "ollama fetch response received",
+              data: {
+                modelId: model.id,
+                status: response.status,
+                ok: response.ok,
+                hasBody: !!response.body,
+                statusText: response.statusText,
+              },
+              timestamp: Date.now(),
+            }) + "\n",
+          );
+        } catch {}
+        // #endregion
         if (!response.ok) {
           const errorText = await response.text().catch(() => "unknown error");
+          // #region agent log
+          try {
+            fs.appendFileSync(
+              "/tmp/openclaw-debug-15b692.log",
+              JSON.stringify({
+                sessionId: "15b692",
+                hypothesisId: "H11",
+                location: "ollama-stream.ts:fetchError",
+                message: "ollama API error",
+                data: {
+                  modelId: model.id,
+                  status: response.status,
+                  errorTextPreview: errorText.slice(0, 200),
+                },
+                timestamp: Date.now(),
+              }) + "\n",
+            );
+          } catch {}
+          // #endregion
           throw Object.assign(new Error(`Ollama API error ${response.status}: ${errorText}`), {
             status: response.status,
           });
@@ -392,17 +457,16 @@ export function createOllamaStreamFn(baseUrl: string): StreamFn {
         let accumulatedContent = "";
         const accumulatedToolCalls: OllamaToolCall[] = [];
         let finalResponse: OllamaChatResponse | undefined;
+        let _chunkCount = 0;
 
         for await (const chunk of parseNdjsonStream(reader)) {
+          _chunkCount++;
           if (chunk.message?.content) {
             accumulatedContent += chunk.message.content;
           } else if (chunk.message?.reasoning) {
-            // Qwen 3 reasoning mode: content may be empty, output in reasoning
             accumulatedContent += chunk.message.reasoning;
           }
 
-          // Ollama sends tool_calls in intermediate (done:false) chunks,
-          // NOT in the final done:true chunk. Collect from all chunks.
           if (chunk.message?.tool_calls) {
             accumulatedToolCalls.push(...chunk.message.tool_calls);
           }
@@ -412,6 +476,34 @@ export function createOllamaStreamFn(baseUrl: string): StreamFn {
             break;
           }
         }
+
+        // #region agent log
+        try {
+          fs.appendFileSync(
+            "/tmp/openclaw-debug-15b692.log",
+            JSON.stringify({
+              sessionId: "15b692",
+              hypothesisId: "H11,H12,H13",
+              location: "ollama-stream.ts:postLoop",
+              message: "stream loop finished",
+              data: {
+                modelId: model.id,
+                chunkCount: _chunkCount,
+                hasFinalResponse: !!finalResponse,
+                accumulatedContentLen: accumulatedContent.length,
+                accumulatedContentPreview: accumulatedContent.slice(0, 200),
+                toolCallCount: accumulatedToolCalls.length,
+                finalDoneReason: finalResponse?.done_reason,
+                finalMessageContent: finalResponse?.message?.content?.slice(0, 100),
+                finalMessageReasoning: finalResponse?.message?.reasoning?.slice(0, 100),
+                evalCount: finalResponse?.eval_count,
+                promptEvalCount: finalResponse?.prompt_eval_count,
+              },
+              timestamp: Date.now(),
+            }) + "\n",
+          );
+        } catch {}
+        // #endregion
 
         if (!finalResponse) {
           throw new Error("Ollama API stream ended without a final response");
@@ -470,6 +562,27 @@ export function createOllamaStreamFn(baseUrl: string): StreamFn {
         });
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : String(err);
+        // #region agent log
+        try {
+          fs.appendFileSync(
+            "/tmp/openclaw-debug-15b692.log",
+            JSON.stringify({
+              sessionId: "15b692",
+              hypothesisId: "H11,H13",
+              location: "ollama-stream.ts:error",
+              message: "ollama stream ERROR caught",
+              data: {
+                modelId: model.id,
+                provider: model.provider,
+                errorMessage: errorMessage.slice(0, 300),
+                errorName: err instanceof Error ? err.name : "unknown",
+                isAbortError: err instanceof Error && err.name === "AbortError",
+              },
+              timestamp: Date.now(),
+            }) + "\n",
+          );
+        } catch {}
+        // #endregion
         stream.push({
           type: "error",
           reason: "error",
