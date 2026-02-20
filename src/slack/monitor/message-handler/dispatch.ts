@@ -199,6 +199,8 @@ export async function dispatchPreparedSlackMessage(prepared: PreparedSlackMessag
           channel: message.channel,
           threadTs: streamThreadTs,
           text,
+          recipientTeamId: ctx.teamId || undefined,
+          recipientUserId: message.user || undefined,
         });
         replyPlan.markSent();
         return;
