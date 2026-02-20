@@ -621,6 +621,34 @@ export async function runEmbeddedAttempt(
         workspaceDir: params.workspaceDir,
       });
 
+      // #region agent log
+      try {
+        const _fsSync = await import("node:fs");
+        _fsSync.default.appendFileSync(
+          "/tmp/openclaw-debug-15b692.log",
+          JSON.stringify({
+            sessionId: "15b692",
+            hypothesisId: "H15",
+            location: "attempt.ts:streamFnBranch",
+            message: "stream function branch",
+            data: {
+              api: params.model.api,
+              provider: params.model.provider,
+              modelId: params.modelId,
+              isOllamaApi: params.model.api === "ollama",
+              baseUrl:
+                typeof (params.model as unknown as Record<string, unknown>).baseUrl === "string"
+                  ? String((params.model as unknown as Record<string, unknown>).baseUrl).slice(
+                      0,
+                      80,
+                    )
+                  : undefined,
+            },
+            timestamp: Date.now(),
+          }) + "\n",
+        );
+      } catch {}
+      // #endregion
       // Ollama native API: bypass SDK's streamSimple and use direct /api/chat calls
       // for reliable streaming + tool calling support (#11828).
       if (params.model.api === "ollama") {

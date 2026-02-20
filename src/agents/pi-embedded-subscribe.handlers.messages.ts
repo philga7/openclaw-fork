@@ -90,6 +90,42 @@ export function handleMessageUpdate(
       ? (assistantEvent as Record<string, unknown>)
       : undefined;
   const evtType = typeof assistantRecord?.type === "string" ? assistantRecord.type : "";
+  // #region agent log
+  {
+    const _st = ctx.state as unknown as Record<string, unknown>;
+    if (!_st._debugLoggedFirstUpdate) {
+      _st._debugLoggedFirstUpdate = true;
+      _st._debugFirstEvtType = evtType;
+      try {
+        fs.appendFileSync(
+          "/tmp/openclaw-debug-15b692.log",
+          JSON.stringify({
+            sessionId: "15b692",
+            hypothesisId: "H15",
+            location: "messages.ts:firstMessageUpdate",
+            message: "first message_update received",
+            data: {
+              runId: ctx.params.runId,
+              role: msg.role,
+              evtType,
+              hasAssistantEvent: !!assistantEvent,
+              contentBlockCount: Array.isArray(msg.content)
+                ? msg.content.length
+                : typeof msg.content === "string"
+                  ? -1
+                  : 0,
+              contentTypes: Array.isArray(msg.content)
+                ? (msg.content as unknown as { type?: string }[]).map((b) => b.type).slice(0, 10)
+                : [],
+              stopReason: (msg as unknown as Record<string, unknown>).stopReason,
+            },
+            timestamp: Date.now(),
+          }) + "\n",
+        );
+      } catch {}
+    }
+  }
+  // #endregion
 
   if (evtType === "thinking_start" || evtType === "thinking_delta" || evtType === "thinking_end") {
     if (evtType === "thinking_start" || evtType === "thinking_delta") {
@@ -280,6 +316,13 @@ export function handleMessageEnd(
           contentBlockCount: cnt,
           emittedAssistantUpdate: ctx.state.emittedAssistantUpdate,
           enforceFinalTag: ctx.params.enforceFinalTag,
+          contentTypes: Array.isArray(am.content)
+            ? (am.content as { type?: string }[]).map((b) => b.type).slice(0, 10)
+            : [],
+          rawThinkingLen: extractAssistantThinking(assistantMessage).length,
+          rawThinkingPreview: extractAssistantThinking(assistantMessage).slice(0, 200),
+          msgKeys: Object.keys(am).slice(0, 15),
+          firstUpdateEvtType: (ctx.state as Record<string, unknown>)._debugFirstEvtType,
         },
         timestamp: Date.now(),
       }) + "\n",
