@@ -1,3 +1,4 @@
+import fsSync from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
@@ -719,9 +720,8 @@ export async function runEmbeddedAttempt(
             ...o,
             onPayload: (p: unknown) => {
               try {
-                const _fs = require("node:fs");
                 const payload = p as Record<string, unknown>;
-                _fs.appendFileSync(
+                fsSync.appendFileSync(
                   "/tmp/openclaw-debug-15b692.log",
                   JSON.stringify({
                     sessionId: "15b692",
@@ -759,9 +759,8 @@ export async function runEmbeddedAttempt(
               try {
                 const e = evt as Record<string, unknown>;
                 if (_chunkCount <= 3 || e.type === "done" || e.type === "error") {
-                  const _fs = require("node:fs");
                   const msg = (e.message ?? e.error) as Record<string, unknown> | undefined;
-                  _fs.appendFileSync(
+                  fsSync.appendFileSync(
                     "/tmp/openclaw-debug-15b692.log",
                     JSON.stringify({
                       sessionId: "15b692",
