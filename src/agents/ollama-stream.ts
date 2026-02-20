@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import fs from "node:fs";
 import type { StreamFn } from "@mariozechner/pi-agent-core";
 import type {
   AssistantMessage,
@@ -336,31 +335,6 @@ export function createOllamaStreamFn(baseUrl: string): StreamFn {
     const stream = createAssistantMessageEventStream();
 
     const run = async () => {
-      // #region agent log
-      try {
-        fs.appendFileSync(
-          "/tmp/openclaw-debug-15b692.log",
-          JSON.stringify({
-            sessionId: "15b692",
-            hypothesisId: "H11,H12,H13,H14",
-            location: "ollama-stream.ts:runStart",
-            message: "ollama stream run started",
-            data: {
-              modelId: model.id,
-              provider: model.provider,
-              api: model.api,
-              chatUrl,
-              hasSignal: !!options?.signal,
-              signalAborted: options?.signal?.aborted,
-              messageCount: (context.messages ?? []).length,
-              hasSystemPrompt: !!context.systemPrompt,
-              toolCount: (context.tools ?? []).length,
-            },
-            timestamp: Date.now(),
-          }) + "\n",
-        );
-      } catch {}
-      // #endregion
       try {
         const ollamaMessages = convertToOllamaMessages(
           context.messages ?? [],
@@ -402,48 +376,8 @@ export function createOllamaStreamFn(baseUrl: string): StreamFn {
           signal: options?.signal,
         });
 
-        // #region agent log
-        try {
-          fs.appendFileSync(
-            "/tmp/openclaw-debug-15b692.log",
-            JSON.stringify({
-              sessionId: "15b692",
-              hypothesisId: "H11,H12",
-              location: "ollama-stream.ts:fetchResponse",
-              message: "ollama fetch response received",
-              data: {
-                modelId: model.id,
-                status: response.status,
-                ok: response.ok,
-                hasBody: !!response.body,
-                statusText: response.statusText,
-              },
-              timestamp: Date.now(),
-            }) + "\n",
-          );
-        } catch {}
-        // #endregion
         if (!response.ok) {
           const errorText = await response.text().catch(() => "unknown error");
-          // #region agent log
-          try {
-            fs.appendFileSync(
-              "/tmp/openclaw-debug-15b692.log",
-              JSON.stringify({
-                sessionId: "15b692",
-                hypothesisId: "H11",
-                location: "ollama-stream.ts:fetchError",
-                message: "ollama API error",
-                data: {
-                  modelId: model.id,
-                  status: response.status,
-                  errorTextPreview: errorText.slice(0, 200),
-                },
-                timestamp: Date.now(),
-              }) + "\n",
-            );
-          } catch {}
-          // #endregion
           throw Object.assign(new Error(`Ollama API error ${response.status}: ${errorText}`), {
             status: response.status,
           });
@@ -457,10 +391,8 @@ export function createOllamaStreamFn(baseUrl: string): StreamFn {
         let accumulatedContent = "";
         const accumulatedToolCalls: OllamaToolCall[] = [];
         let finalResponse: OllamaChatResponse | undefined;
-        let _chunkCount = 0;
 
         for await (const chunk of parseNdjsonStream(reader)) {
-          _chunkCount++;
           if (chunk.message?.content) {
             accumulatedContent += chunk.message.content;
           } else if (chunk.message?.reasoning) {
@@ -476,34 +408,6 @@ export function createOllamaStreamFn(baseUrl: string): StreamFn {
             break;
           }
         }
-
-        // #region agent log
-        try {
-          fs.appendFileSync(
-            "/tmp/openclaw-debug-15b692.log",
-            JSON.stringify({
-              sessionId: "15b692",
-              hypothesisId: "H11,H12,H13",
-              location: "ollama-stream.ts:postLoop",
-              message: "stream loop finished",
-              data: {
-                modelId: model.id,
-                chunkCount: _chunkCount,
-                hasFinalResponse: !!finalResponse,
-                accumulatedContentLen: accumulatedContent.length,
-                accumulatedContentPreview: accumulatedContent.slice(0, 200),
-                toolCallCount: accumulatedToolCalls.length,
-                finalDoneReason: finalResponse?.done_reason,
-                finalMessageContent: finalResponse?.message?.content?.slice(0, 100),
-                finalMessageReasoning: finalResponse?.message?.reasoning?.slice(0, 100),
-                evalCount: finalResponse?.eval_count,
-                promptEvalCount: finalResponse?.prompt_eval_count,
-              },
-              timestamp: Date.now(),
-            }) + "\n",
-          );
-        } catch {}
-        // #endregion
 
         if (!finalResponse) {
           throw new Error("Ollama API stream ended without a final response");
@@ -523,38 +427,6 @@ export function createOllamaStreamFn(baseUrl: string): StreamFn {
         const reason: Extract<StopReason, "stop" | "length" | "toolUse"> =
           assistantMessage.stopReason === "toolUse" ? "toolUse" : "stop";
 
-        // #region agent log
-        const _asstTextBlocks = assistantMessage.content.filter(
-          (c: { type: string }) => c.type === "text",
-        );
-        const _asstToolBlocks = assistantMessage.content.filter(
-          (c: { type: string }) => c.type === "toolCall",
-        );
-        try {
-          fs.appendFileSync(
-            "/tmp/openclaw-debug-15b692.log",
-            JSON.stringify({
-              sessionId: "15b692",
-              hypothesisId: "H1",
-              location: "ollama-stream.ts:streamDone",
-              message: "ollama stream final message",
-              data: {
-                modelId: model.id,
-                provider: model.provider,
-                stopReason: assistantMessage.stopReason,
-                contentBlockCount: assistantMessage.content.length,
-                textBlockCount: _asstTextBlocks.length,
-                toolCallBlockCount: _asstToolBlocks.length,
-                accumulatedContentLen: accumulatedContent.length,
-                accumulatedContentPreview: accumulatedContent.slice(0, 200),
-                doneReason: finalResponse.done_reason,
-              },
-              timestamp: Date.now(),
-            }) + "\n",
-          );
-        } catch {}
-        // #endregion
-
         stream.push({
           type: "done",
           reason,
@@ -562,27 +434,6 @@ export function createOllamaStreamFn(baseUrl: string): StreamFn {
         });
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : String(err);
-        // #region agent log
-        try {
-          fs.appendFileSync(
-            "/tmp/openclaw-debug-15b692.log",
-            JSON.stringify({
-              sessionId: "15b692",
-              hypothesisId: "H11,H13",
-              location: "ollama-stream.ts:error",
-              message: "ollama stream ERROR caught",
-              data: {
-                modelId: model.id,
-                provider: model.provider,
-                errorMessage: errorMessage.slice(0, 300),
-                errorName: err instanceof Error ? err.name : "unknown",
-                isAbortError: err instanceof Error && err.name === "AbortError",
-              },
-              timestamp: Date.now(),
-            }) + "\n",
-          );
-        } catch {}
-        // #endregion
         stream.push({
           type: "error",
           reason: "error",

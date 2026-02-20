@@ -1,4 +1,3 @@
-import fsSync from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
@@ -622,34 +621,6 @@ export async function runEmbeddedAttempt(
         workspaceDir: params.workspaceDir,
       });
 
-      // #region agent log
-      try {
-        const _fsSync = await import("node:fs");
-        _fsSync.default.appendFileSync(
-          "/tmp/openclaw-debug-15b692.log",
-          JSON.stringify({
-            sessionId: "15b692",
-            hypothesisId: "H15",
-            location: "attempt.ts:streamFnBranch",
-            message: "stream function branch",
-            data: {
-              api: params.model.api,
-              provider: params.model.provider,
-              modelId: params.modelId,
-              isOllamaApi: params.model.api === "ollama",
-              baseUrl:
-                typeof (params.model as unknown as Record<string, unknown>).baseUrl === "string"
-                  ? String((params.model as unknown as Record<string, unknown>).baseUrl).slice(
-                      0,
-                      80,
-                    )
-                  : undefined,
-            },
-            timestamp: Date.now(),
-          }) + "\n",
-        );
-      } catch {}
-      // #endregion
       // Ollama native API: bypass SDK's streamSimple and use direct /api/chat calls
       // for reliable streaming + tool calling support (#11828).
       if (params.model.api === "ollama") {
@@ -661,29 +632,6 @@ export async function runEmbeddedAttempt(
           typeof providerConfig?.baseUrl === "string" ? providerConfig.baseUrl.trim() : "";
         const ollamaBaseUrl = modelBaseUrl || providerBaseUrl || OLLAMA_NATIVE_BASE_URL;
         activeSession.agent.streamFn = createOllamaStreamFn(ollamaBaseUrl);
-        // #region agent log
-        try {
-          const _fsSync = await import("node:fs");
-          _fsSync.default.appendFileSync(
-            "/tmp/openclaw-debug-15b692.log",
-            JSON.stringify({
-              sessionId: "15b692",
-              hypothesisId: "H14",
-              location: "attempt.ts:streamFnAssignment",
-              message: "stream function assigned",
-              data: {
-                api: params.model.api,
-                provider: params.model.provider,
-                modelId: params.modelId,
-                ollamaBaseUrl,
-                hasCacheTrace: !!cacheTrace,
-                hasPayloadLogger: !!anthropicPayloadLogger,
-              },
-              timestamp: Date.now(),
-            }) + "\n",
-          );
-        } catch {}
-        // #endregion
       } else {
         // Force a stable streamFn reference so vitest can reliably mock @mariozechner/pi-ai.
         activeSession.agent.streamFn = streamSimple;
@@ -710,108 +658,6 @@ export async function runEmbeddedAttempt(
           activeSession.agent.streamFn,
         );
       }
-
-      // #region agent log
-      {
-        const _origFn = activeSession.agent.streamFn;
-        activeSession.agent.streamFn = (m, c, o) => {
-          const _onPayloadOrig = o?.onPayload;
-          const _opts = {
-            ...o,
-            onPayload: (p: unknown) => {
-              try {
-                const payload = p as Record<string, unknown>;
-                fsSync.appendFileSync(
-                  "/tmp/openclaw-debug-15b692.log",
-                  JSON.stringify({
-                    sessionId: "15b692",
-                    hypothesisId: "H15,H16",
-                    location: "attempt.ts:streamPayload",
-                    message: "outgoing API payload",
-                    data: {
-                      model: payload.model,
-                      stream: payload.stream,
-                      hasThinking: "thinking" in payload,
-                      thinkingParam: payload.thinking,
-                      hasReasoningEffort: "reasoning_effort" in payload,
-                      reasoningEffort: payload.reasoning_effort,
-                      hasEnableThinking: "enable_thinking" in payload,
-                      enableThinking: payload.enable_thinking,
-                      messageCount: Array.isArray(payload.messages)
-                        ? (payload.messages as unknown[]).length
-                        : 0,
-                      toolCount: Array.isArray(payload.tools)
-                        ? (payload.tools as unknown[]).length
-                        : 0,
-                    },
-                    timestamp: Date.now(),
-                  }) + "\n",
-                );
-              } catch {}
-              _onPayloadOrig?.(p);
-            },
-          };
-          const _wrapStream = (stream: { push: (evt: unknown) => void; [k: string]: unknown }) => {
-            const _origPush = stream.push.bind(stream);
-            let _chunkCount = 0;
-            stream.push = (evt: unknown) => {
-              _chunkCount++;
-              try {
-                const e = evt as Record<string, unknown>;
-                if (_chunkCount <= 3 || e.type === "done" || e.type === "error") {
-                  const msg = (e.message ?? e.error) as Record<string, unknown> | undefined;
-                  fsSync.appendFileSync(
-                    "/tmp/openclaw-debug-15b692.log",
-                    JSON.stringify({
-                      sessionId: "15b692",
-                      hypothesisId: "H15,H16,H17",
-                      location: "attempt.ts:streamEvent",
-                      message: "stream event",
-                      data: {
-                        chunkIdx: _chunkCount,
-                        type: e.type,
-                        ...(e.type === "done" || e.type === "error"
-                          ? {
-                              reason: e.reason,
-                              stopReason: msg?.stopReason,
-                              contentBlockCount: Array.isArray(msg?.content)
-                                ? (msg.content as unknown[]).length
-                                : 0,
-                              contentTypes: Array.isArray(msg?.content)
-                                ? (msg.content as { type?: string }[])
-                                    .map((b) => b.type)
-                                    .slice(0, 10)
-                                : [],
-                              errorMessage: msg?.errorMessage,
-                              totalChunks: _chunkCount,
-                            }
-                          : {
-                              contentIndex: e.contentIndex,
-                              deltaPreview:
-                                typeof e.delta === "string" ? e.delta.slice(0, 100) : undefined,
-                            }),
-                      },
-                      timestamp: Date.now(),
-                    }) + "\n",
-                  );
-                }
-              } catch {}
-              _origPush(evt);
-            };
-            return stream;
-          };
-          const _result = _origFn(m, c, _opts);
-          if (_result && typeof (_result as { then?: unknown }).then === "function") {
-            return (_result as Promise<{ push: (evt: unknown) => void }>).then(
-              _wrapStream,
-            ) as ReturnType<typeof _origFn>;
-          }
-          return _wrapStream(
-            _result as unknown as { push: (evt: unknown) => void; [k: string]: unknown },
-          ) as unknown as ReturnType<typeof _origFn>;
-        };
-      }
-      // #endregion
 
       try {
         const prior = await sanitizeSessionHistory({

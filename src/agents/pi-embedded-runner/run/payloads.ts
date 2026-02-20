@@ -1,4 +1,3 @@
-import fs from "node:fs";
 import type { AssistantMessage } from "@mariozechner/pi-ai";
 import { parseReplyDirectives } from "../../../auto-reply/reply/reply-directives.js";
 import type { ReasoningLevel, VerboseLevel } from "../../../auto-reply/thinking.js";
@@ -224,12 +223,23 @@ export function buildEmbeddedRunPayloads(params: {
     }
     return isRawApiErrorPayload(trimmed);
   };
+  const thinkingOnlyFallback =
+    !params.assistantTexts.length &&
+    !fallbackAnswerText &&
+    !lastAssistantErrored &&
+    params.lastAssistant?.stopReason === "stop" &&
+    params.lastAssistant
+      ? extractAssistantThinking(params.lastAssistant)
+      : "";
+
   const answerTexts = (
     params.assistantTexts.length
       ? params.assistantTexts
       : fallbackAnswerText
         ? [fallbackAnswerText]
-        : []
+        : thinkingOnlyFallback
+          ? ["I thought about this but wasn't able to formulate a response. Please try again."]
+          : []
   ).filter((text) => !shouldSuppressRawErrorText(text));
 
   let hasUserFacingAssistantReply = false;
@@ -294,33 +304,6 @@ export function buildEmbeddedRunPayloads(params: {
     }
   }
 
-  // #region agent log
-  try {
-    fs.appendFileSync(
-      "/tmp/openclaw-debug-15b692.log",
-      JSON.stringify({
-        sessionId: "15b692",
-        hypothesisId: "H5",
-        location: "payloads.ts:buildEmbeddedRunPayloads",
-        message: "payload construction",
-        data: {
-          assistantTextsCount: params.assistantTexts.length,
-          assistantTextsPreview: params.assistantTexts.map((t: string) => t.slice(0, 80)),
-          answerTextsCount: answerTexts.length,
-          answerTextsPreview: answerTexts.map((t: string) => t.slice(0, 80)),
-          replyItemsCount: replyItems.length,
-          lastAssistantStopReason: params.lastAssistant?.stopReason,
-          lastAssistantErrored,
-          hasUserFacingAssistantReply,
-          fallbackAnswerText: fallbackAnswerText.slice(0, 80),
-          provider: params.provider,
-          model: params.model,
-        },
-        timestamp: Date.now(),
-      }) + "\n",
-    );
-  } catch {}
-  // #endregion
   const hasAudioAsVoiceTag = replyItems.some((item) => item.audioAsVoice);
   return replyItems
     .map((item) => ({

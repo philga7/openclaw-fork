@@ -1,4 +1,3 @@
-import fs from "node:fs";
 import type { Bot } from "grammy";
 import { resolveAgentDir } from "../agents/agent-scope.js";
 import {
@@ -418,21 +417,6 @@ export const dispatchTelegramMessage = async ({
       context,
     } = params;
     if (!lane.stream) {
-      // #region agent log
-      try {
-        fs.appendFileSync(
-          "/tmp/openclaw-debug-15b692.log",
-          JSON.stringify({
-            sessionId: "15b692",
-            hypothesisId: "H6",
-            location: "bot-message-dispatch.ts:tryUpdatePreview:noStream",
-            message: "no stream for lane",
-            data: { laneName, context },
-            timestamp: Date.now(),
-          }) + "\n",
-        );
-      } catch {}
-      // #endregion
       return false;
     }
     const hadPreviewMessage = typeof lane.stream.messageId() === "number";
@@ -441,21 +425,6 @@ export const dispatchTelegramMessage = async ({
     }
     const previewMessageId = lane.stream.messageId();
     if (typeof previewMessageId !== "number") {
-      // #region agent log
-      try {
-        fs.appendFileSync(
-          "/tmp/openclaw-debug-15b692.log",
-          JSON.stringify({
-            sessionId: "15b692",
-            hypothesisId: "H6",
-            location: "bot-message-dispatch.ts:tryUpdatePreview:noMsgId",
-            message: "no preview message id",
-            data: { laneName, context, hadPreviewMessage, stopBeforeEdit },
-            timestamp: Date.now(),
-          }) + "\n",
-        );
-      } catch {}
-      // #endregion
       return false;
     }
     const currentPreviewText = getLanePreviewText(lane);
@@ -467,21 +436,6 @@ export const dispatchTelegramMessage = async ({
     if (shouldSkipRegressive) {
       // Avoid regressive punctuation/wording flicker from occasional shorter finals.
       deliveryState.delivered = true;
-      // #region agent log
-      try {
-        fs.appendFileSync(
-          "/tmp/openclaw-debug-15b692.log",
-          JSON.stringify({
-            sessionId: "15b692",
-            hypothesisId: "H6",
-            location: "bot-message-dispatch.ts:tryUpdatePreview:regressive",
-            message: "skipped regressive edit",
-            data: { laneName, context, textLen: text.length, previewMsgId: previewMessageId },
-            timestamp: Date.now(),
-          }) + "\n",
-        );
-      } catch {}
-      // #endregion
       return true;
     }
     try {
@@ -497,44 +451,8 @@ export const dispatchTelegramMessage = async ({
         lane.draftText = text;
       }
       deliveryState.delivered = true;
-      // #region agent log
-      try {
-        fs.appendFileSync(
-          "/tmp/openclaw-debug-15b692.log",
-          JSON.stringify({
-            sessionId: "15b692",
-            hypothesisId: "H6",
-            location: "bot-message-dispatch.ts:tryUpdatePreview:ok",
-            message: "preview edit succeeded",
-            data: { laneName, context, textLen: text.length, previewMsgId: previewMessageId },
-            timestamp: Date.now(),
-          }) + "\n",
-        );
-      } catch {}
-      // #endregion
       return true;
     } catch (err) {
-      // #region agent log
-      try {
-        fs.appendFileSync(
-          "/tmp/openclaw-debug-15b692.log",
-          JSON.stringify({
-            sessionId: "15b692",
-            hypothesisId: "H6",
-            location: "bot-message-dispatch.ts:tryUpdatePreview:error",
-            message: "preview edit FAILED",
-            data: {
-              laneName,
-              context,
-              textLen: text.length,
-              previewMsgId: previewMessageId,
-              error: String(err).slice(0, 200),
-            },
-            timestamp: Date.now(),
-          }) + "\n",
-        );
-      } catch {}
-      // #endregion
       logVerbose(
         `telegram: ${laneName} preview ${context} edit failed; falling back to standard send (${String(err)})`,
       );
@@ -580,33 +498,6 @@ export const dispatchTelegramMessage = async ({
     const canEditViaPreview =
       !hasMedia && text.length > 0 && text.length <= draftMaxChars && !payload.isError;
 
-    // #region agent log
-    try {
-      fs.appendFileSync(
-        "/tmp/openclaw-debug-15b692.log",
-        JSON.stringify({
-          sessionId: "15b692",
-          hypothesisId: "H6,H7,H9",
-          location: "bot-message-dispatch.ts:deliverLaneText",
-          message: "lane delivery start",
-          data: {
-            laneName,
-            infoKind,
-            textLen: text.length,
-            draftMaxChars,
-            canEditViaPreview,
-            hasMedia,
-            isError: payload.isError,
-            previewMsgId: lane.stream?.messageId(),
-            alreadyFinalized: finalizedPreviewByLane[laneName],
-            textPreview: text.slice(0, 120),
-          },
-          timestamp: Date.now(),
-        }) + "\n",
-      );
-    } catch {}
-    // #endregion
-
     if (infoKind === "final") {
       if (canEditViaPreview && !finalizedPreviewByLane[laneName]) {
         await flushDraftLane(lane);
@@ -621,75 +512,15 @@ export const dispatchTelegramMessage = async ({
         });
         if (finalized) {
           finalizedPreviewByLane[laneName] = true;
-          // #region agent log
-          try {
-            fs.appendFileSync(
-              "/tmp/openclaw-debug-15b692.log",
-              JSON.stringify({
-                sessionId: "15b692",
-                hypothesisId: "H6",
-                location: "bot-message-dispatch.ts:deliverLaneText:finalizedOk",
-                message: "preview finalized successfully",
-                data: { laneName, textLen: text.length },
-                timestamp: Date.now(),
-              }) + "\n",
-            );
-          } catch {}
-          // #endregion
           return "preview-finalized";
         }
-        // #region agent log
-        try {
-          fs.appendFileSync(
-            "/tmp/openclaw-debug-15b692.log",
-            JSON.stringify({
-              sessionId: "15b692",
-              hypothesisId: "H6",
-              location: "bot-message-dispatch.ts:deliverLaneText:finalizeFailed",
-              message: "preview finalize FAILED, falling back to sendPayload",
-              data: { laneName, textLen: text.length },
-              timestamp: Date.now(),
-            }) + "\n",
-          );
-        } catch {}
-        // #endregion
       } else if (!hasMedia && !payload.isError && text.length > draftMaxChars) {
-        // #region agent log
-        try {
-          fs.appendFileSync(
-            "/tmp/openclaw-debug-15b692.log",
-            JSON.stringify({
-              sessionId: "15b692",
-              hypothesisId: "H7",
-              location: "bot-message-dispatch.ts:deliverLaneText:textTooLong",
-              message: "text exceeds draftMaxChars",
-              data: { laneName, textLen: text.length, draftMaxChars },
-              timestamp: Date.now(),
-            }) + "\n",
-          );
-        } catch {}
-        // #endregion
         logVerbose(
           `telegram: preview final too long for edit (${text.length} > ${draftMaxChars}); falling back to standard send`,
         );
       }
       await lane.stream?.stop();
       const delivered = await sendPayload(applyTextToPayload(payload, text));
-      // #region agent log
-      try {
-        fs.appendFileSync(
-          "/tmp/openclaw-debug-15b692.log",
-          JSON.stringify({
-            sessionId: "15b692",
-            hypothesisId: "H6,H7",
-            location: "bot-message-dispatch.ts:deliverLaneText:finalSendResult",
-            message: "fallback sendPayload result",
-            data: { laneName, delivered, textLen: text.length },
-            timestamp: Date.now(),
-          }) + "\n",
-        );
-      } catch {}
-      // #endregion
       return delivered ? "sent" : "skipped";
     }
 
@@ -726,32 +557,6 @@ export const dispatchTelegramMessage = async ({
           )?.buttons;
           const segments = splitTextIntoLaneSegments(payload.text);
           const hasMedia = Boolean(payload.mediaUrl) || (payload.mediaUrls?.length ?? 0) > 0;
-          // #region agent log
-          try {
-            fs.appendFileSync(
-              "/tmp/openclaw-debug-15b692.log",
-              JSON.stringify({
-                sessionId: "15b692",
-                hypothesisId: "H6,H8,H9",
-                location: "bot-message-dispatch.ts:deliver",
-                message: "deliver callback invoked",
-                data: {
-                  kind: info.kind,
-                  payloadTextLen: payload.text?.length,
-                  segmentCount: segments.length,
-                  segments: segments.map((s: { lane: string; text: string }) => ({
-                    lane: s.lane,
-                    textLen: s.text.length,
-                    textPreview: s.text.slice(0, 80),
-                  })),
-                  hasMedia,
-                  isError: payload.isError,
-                },
-                timestamp: Date.now(),
-              }) + "\n",
-            );
-          } catch {}
-          // #endregion
 
           const flushBufferedFinalAnswer = async () => {
             const buffered = reasoningStepState.takeBufferedFinalAnswer();
@@ -830,46 +635,11 @@ export const dispatchTelegramMessage = async ({
           }
         },
         onSkip: (_payload, info) => {
-          // #region agent log
-          try {
-            fs.appendFileSync(
-              "/tmp/openclaw-debug-15b692.log",
-              JSON.stringify({
-                sessionId: "15b692",
-                hypothesisId: "H8",
-                location: "bot-message-dispatch.ts:onSkip",
-                message: "payload skipped by normalizer",
-                data: {
-                  reason: info.reason,
-                  kind: info.kind,
-                  payloadTextLen: _payload?.text?.length,
-                  payloadTextPreview: _payload?.text?.slice(0, 120),
-                },
-                timestamp: Date.now(),
-              }) + "\n",
-            );
-          } catch {}
-          // #endregion
           if (info.reason !== "silent") {
             deliveryState.skippedNonSilent += 1;
           }
         },
         onError: (err, info) => {
-          // #region agent log
-          try {
-            fs.appendFileSync(
-              "/tmp/openclaw-debug-15b692.log",
-              JSON.stringify({
-                sessionId: "15b692",
-                hypothesisId: "H6,H7",
-                location: "bot-message-dispatch.ts:onError",
-                message: "delivery error",
-                data: { kind: info.kind, error: String(err).slice(0, 200) },
-                timestamp: Date.now(),
-              }) + "\n",
-            );
-          } catch {}
-          // #endregion
           deliveryState.failedNonSilent += 1;
           runtime.error?.(danger(`telegram ${info.kind} reply failed: ${String(err)}`));
         },
@@ -947,85 +717,18 @@ export const dispatchTelegramMessage = async ({
       }
       existing.shouldClear = existing.shouldClear && shouldClear;
     }
-    // #region agent log
-    const _cleanupLanes: { laneName: string; shouldClear: boolean; hasMsgId: boolean }[] = [];
-    // #endregion
     for (const [stream, cleanupState] of streamCleanupStates) {
       await stream.stop();
-      // #region agent log
-      _cleanupLanes.push({
-        laneName: "(deduped)",
-        shouldClear: cleanupState.shouldClear,
-        hasMsgId: typeof stream.messageId() === "number",
-      });
-      // #endregion
       if (cleanupState.shouldClear) {
-        // #region agent log
-        try {
-          fs.appendFileSync(
-            "/tmp/openclaw-debug-15b692.log",
-            JSON.stringify({
-              sessionId: "15b692",
-              hypothesisId: "H6,H10",
-              location: "bot-message-dispatch.ts:cleanup:clear",
-              message: "DELETING draft stream message",
-              data: {
-                hasMsgId: typeof stream.messageId() === "number",
-                msgId: stream.messageId(),
-                finalizedAnswer: finalizedPreviewByLane.answer,
-                finalizedReasoning: finalizedPreviewByLane.reasoning,
-                deliveryState,
-              },
-              timestamp: Date.now(),
-            }) + "\n",
-          );
-        } catch {}
-        // #endregion
         await stream.clear();
       }
     }
-    // #region agent log
-    try {
-      fs.appendFileSync(
-        "/tmp/openclaw-debug-15b692.log",
-        JSON.stringify({
-          sessionId: "15b692",
-          hypothesisId: "H6,H10",
-          location: "bot-message-dispatch.ts:cleanup:summary",
-          message: "cleanup done",
-          data: {
-            finalizedAnswer: finalizedPreviewByLane.answer,
-            finalizedReasoning: finalizedPreviewByLane.reasoning,
-            deliveryState,
-            cleanupLanes: _cleanupLanes,
-            queuedFinal,
-          },
-          timestamp: Date.now(),
-        }) + "\n",
-      );
-    } catch {}
-    // #endregion
   }
   let sentFallback = false;
   if (
     !deliveryState.delivered &&
     (deliveryState.skippedNonSilent > 0 || deliveryState.failedNonSilent > 0)
   ) {
-    // #region agent log
-    try {
-      fs.appendFileSync(
-        "/tmp/openclaw-debug-15b692.log",
-        JSON.stringify({
-          sessionId: "15b692",
-          hypothesisId: "H10",
-          location: "bot-message-dispatch.ts:fallback",
-          message: "sending empty fallback",
-          data: { deliveryState, queuedFinal },
-          timestamp: Date.now(),
-        }) + "\n",
-      );
-    } catch {}
-    // #endregion
     const result = await deliverReplies({
       replies: [{ text: EMPTY_RESPONSE_FALLBACK }],
       ...deliveryBaseOptions,

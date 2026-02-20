@@ -1,4 +1,3 @@
-import fs from "node:fs";
 import {
   handleAgentEnd,
   handleAgentStart,
@@ -22,21 +21,6 @@ import type {
 
 export function createEmbeddedPiSessionEventHandler(ctx: EmbeddedPiSubscribeContext) {
   return (evt: EmbeddedPiSubscribeEvent) => {
-    // #region agent log
-    try {
-      fs.appendFileSync(
-        "/tmp/openclaw-debug-15b692.log",
-        JSON.stringify({
-          sessionId: "15b692",
-          hypothesisId: "H1",
-          location: "handlers.ts:eventDispatch",
-          message: "event received",
-          data: { eventType: evt.type, runId: ctx.params.runId },
-          timestamp: Date.now(),
-        }) + "\n",
-      );
-    } catch {}
-    // #endregion
     switch (evt.type) {
       case "message_start":
         handleMessageStart(ctx, evt as never);

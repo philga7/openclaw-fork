@@ -1086,34 +1086,6 @@ export async function runEmbeddedPiAgent(
             };
           }
 
-          // #region agent log
-          try {
-            const _fs = await import("node:fs");
-            _fs.default.appendFileSync(
-              "/tmp/openclaw-debug-15b692.log",
-              JSON.stringify({
-                sessionId: "15b692",
-                hypothesisId: "H1,H5",
-                location: "run.ts:runDone",
-                message: "run done payloads",
-                data: {
-                  runId: params.runId,
-                  sessionId: params.sessionId,
-                  payloadsCount: payloads.length,
-                  payloadsPreview: payloads.map((p: { text?: string }) => ({
-                    textLen: p.text?.length,
-                    textPreview: p.text?.slice(0, 80),
-                  })),
-                  timedOut,
-                  aborted,
-                  provider,
-                  model: modelId,
-                },
-                timestamp: Date.now(),
-              }) + "\n",
-            );
-          } catch {}
-          // #endregion
           log.debug(
             `embedded run done: runId=${params.runId} sessionId=${params.sessionId} durationMs=${Date.now() - started} aborted=${aborted}`,
           );
