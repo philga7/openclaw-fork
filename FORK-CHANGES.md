@@ -140,7 +140,7 @@ Operational checklist when running this fork with [OpenClaw-Foundry](https://git
 ### Slack dynamic status (typing and phase)
 
 - **Thread status reflects gateway phase** — The Slack assistant thread status (the line above the thread that shows “is typing…” / loading) now updates to show what the gateway is doing:
-  - **On reply start:** `"{bot display name} is thinking..."` (bot name from `users.info` via `resolveUserName(botUserId)`; fallback `"Assistant"`). Avoids redundancy with Slack’s built-in “… is typing” indicator below the input.
+  - **On reply start:** `"is thinking..."` (Slack prepends the app name below the input, so we omit it to avoid repetition).
   - **Reasoning stream:** `"Thinking..."`
   - **Tool start:** `"Running: {toolName}..."` (e.g. `"Running: web_search..."`); fallback `"Running: tool..."`
   - **Assistant message start:** `"Responding..."` (when not using native streaming)
