@@ -150,10 +150,6 @@ Operational checklist when running this fork with [OpenClaw-Foundry](https://git
   - `src/discord/monitor/provider.proxy.test.ts` asserts that the gateway plugin’s `reconnect.maxAttempts` is `Infinity` and keeps covering proxy behavior.
   - `src/discord/monitor/provider.supervisor.test.ts` verifies that `monitorDiscordProviderWithSupervisor` returns immediately when the provided `abortSignal` is already aborted, ensuring the supervisor respects shutdown and does not spin up a new Discord session during gateway teardown.
 
-### Slack streaming (missing_recipient_team_id)
-
-- Pass `recipient_team_id` and `recipient_user_id` when starting native Slack streaming so `chat.stopStream` succeeds in Slack Connect and Enterprise Grid. Without these, `chat.stopStream` fails with `missing_recipient_team_id` and replies never appear despite successful agent runs. Fix in `src/slack/streaming.ts` and `src/slack/monitor/message-handler/dispatch.ts`.
-
 ### Upstream merge (Feb 2026) and session path fix
 
 - **Merge from openclaw/main** — Integrated 113 upstream commits (through early Feb 2026). Resolved 9 conflicts while keeping fork behavior: labeler uses `github.token` (no App) in label/label-issues jobs; stderr in tool errors + `after_tool_call` on errors in `pi-tool-definition-adapter.ts`; upstream safe skill sync dest + fork `baseDir` check in `skills/workspace.ts`; async `buildAgentSystemPrompt` tests in `system-prompt.test.ts`; fork `getLatestSessionTranscriptForAgent` plus upstream path validation/APIs in `config/sessions/paths.ts`; both proactive-compaction and upstream promptTokens test in `run.overflow-compaction.test.ts`; `/compact` `scope: "both"` in `commands-registry.data.ts`. Discord channel-fetch test expectation updated for upstream role-based routing.

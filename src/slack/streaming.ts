@@ -37,15 +37,17 @@ export type StartSlackStreamParams = {
   /** Optional initial markdown text to include in the stream start. */
   text?: string;
   /**
-   * Team ID of the recipient's workspace. Required for Slack Connect / Enterprise Grid.
-   * @see https://docs.slack.dev/reference/methods/chat.startStream
+   * The team ID of the workspace this stream belongs to.
+   * Required by the Slack API for `chat.startStream` / `chat.stopStream`.
+   * Obtain from `auth.test` response (`team_id`).
    */
-  recipientTeamId?: string;
+  teamId?: string;
   /**
-   * User ID of the message recipient. Required when starting a stream outside of a DM.
-   * @see https://docs.slack.dev/reference/methods/chat.startStream
+   * The user ID of the message recipient (required for DM streaming).
+   * Without this, `chat.stopStream` fails with `missing_recipient_user_id`
+   * in direct message conversations.
    */
-  recipientUserId?: string;
+  userId?: string;
 };
 
 export type AppendSlackStreamParams = {
@@ -74,15 +76,17 @@ export type StopSlackStreamParams = {
 export async function startSlackStream(
   params: StartSlackStreamParams,
 ): Promise<SlackStreamSession> {
-  const { client, channel, threadTs, text, recipientTeamId, recipientUserId } = params;
+  const { client, channel, threadTs, text, teamId, userId } = params;
 
-  logVerbose(`slack-stream: starting stream in ${channel} thread=${threadTs}`);
+  logVerbose(
+    `slack-stream: starting stream in ${channel} thread=${threadTs}${teamId ? ` team=${teamId}` : ""}${userId ? ` user=${userId}` : ""}`,
+  );
 
   const streamer = client.chatStream({
     channel,
     thread_ts: threadTs,
-    ...(recipientTeamId ? { recipient_team_id: recipientTeamId } : {}),
-    ...(recipientUserId ? { recipient_user_id: recipientUserId } : {}),
+    ...(teamId ? { recipient_team_id: teamId } : {}),
+    ...(userId ? { recipient_user_id: userId } : {}),
   });
 
   const session: SlackStreamSession = {
