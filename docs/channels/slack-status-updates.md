@@ -6,7 +6,7 @@ This doc outlines what’s needed so the Slack thread status (the “is typing�
 
 ## Current behavior
 
-- **Slack** calls `assistant.threads.setStatus` once when the reply starts (`onReplyStart`) with a dynamic status `"{bot display name} is thinking..."` (bot name from `users.info`; fallback `"Assistant"`) and clears it when the run is idle (`onIdle`). No updates in between.
+- **Slack** calls `assistant.threads.setStatus` once when the reply starts (`onReplyStart`) with status `"is thinking..."` (Slack prepends the app name below the input, so we omit it to avoid repetition) and clears it when the run is idle (`onIdle`). No updates in between.
 - **Discord** already shows phase via status reactions: it passes `onReasoningStream` and `onToolStart` into `replyOptions` and updates a reaction (🧠 thinking, 🛠️ tool, etc.) in those callbacks.
 
 The reply pipeline already emits the right events; Slack just doesn’t use them for status text.
@@ -26,7 +26,7 @@ The reply pipeline already emits the right events; Slack just doesn’t use them
 
 In `src/slack/monitor/message-handler/dispatch.ts`, define a small helper that maps phase to a short status string, e.g.:
 
-- Run start (current): `"{bot name} is thinking..."` (resolved from `ctx.resolveUserName(ctx.botUserId)`; fallback `"Assistant"`)
+- Run start (current): `"is thinking..."` (Slack prepends the app name; we omit it to avoid repetition)
 - Reasoning: `"Thinking..."`
 - Tool start: `"Running: {toolName}..."` (e.g. `"Running: web_search..."`), with a short fallback if `name` is missing (e.g. `"Running tool..."`).
 - Assistant message start (optional): `"Responding..."` to distinguish from thinking/tool.

@@ -147,8 +147,8 @@ export async function dispatchPreparedSlackMessage(prepared: PreparedSlackMessag
   const typingCallbacks = createTypingCallbacks({
     start: async () => {
       didSetStatus = true;
-      const botName = (await ctx.resolveUserName(ctx.botUserId)).name?.trim() || "Assistant";
-      const status = `${botName} is thinking...`;
+      // Use "is thinking..." without bot name; Slack prepends the app name below the input.
+      const status = "is thinking...";
       await ctx.setSlackThreadStatus({
         channelId: message.channel,
         threadTs: statusThreadTs,

@@ -311,13 +311,13 @@ describe("monitorSlackProvider tool results", () => {
     };
     const setStatus = client.assistant?.threads?.setStatus;
     expect(setStatus).toHaveBeenCalledTimes(2);
-    // Bot name comes from users.info mock (display_name: "Ada" in test helpers).
+    // Status omits bot name; Slack prepends it below the input.
     expect(setStatus).toHaveBeenNthCalledWith(1, {
       token: "bot-token",
       channel_id: "C1",
       thread_ts: "123",
-      status: "Ada is thinking...",
-      loading_messages: ["Ada is thinking..."],
+      status: "is thinking...",
+      loading_messages: ["is thinking..."],
     });
     expect(setStatus).toHaveBeenNthCalledWith(2, {
       token: "bot-token",
@@ -351,9 +351,7 @@ describe("monitorSlackProvider tool results", () => {
       assistant?: { threads?: { setStatus?: ReturnType<typeof vi.fn> } };
     };
     const setStatus = client.assistant?.threads?.setStatus;
-    expect(setStatus).toHaveBeenCalledWith(
-      expect.objectContaining({ status: "Ada is thinking..." }),
-    );
+    expect(setStatus).toHaveBeenCalledWith(expect.objectContaining({ status: "is thinking..." }));
     expect(setStatus).toHaveBeenCalledWith(expect.objectContaining({ status: "Thinking..." }));
     expect(setStatus).toHaveBeenCalledWith(
       expect.objectContaining({ status: "Running: web_search..." }),
