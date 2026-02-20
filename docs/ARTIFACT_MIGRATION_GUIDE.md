@@ -41,12 +41,12 @@ Also archived (deleted):
 
 ### New Location
 
-**Repository:** https://github.com/openclaw/maintainers  
+**Repository:** <https://github.com/openclaw/maintainers>  
 **Path:** `.agents/skills/`
 
 The maintainers repository structure:
 
-```
+```text
 openclaw/maintainers/
 ├── .agents/
 │   └── skills/
@@ -89,6 +89,7 @@ Maintainer skills now live in [`openclaw/maintainers`](https://github.com/opencl
 - After merge, pull the latest from `openclaw/maintainers`
 - Use git subtree or manual copy to sync `.agents/skills/` from maintainers repo
 - Command example:
+
   ```bash
   git subtree pull --prefix=.agents/skills \
     https://github.com/openclaw/maintainers.git main --squash
@@ -100,7 +101,7 @@ Maintainer skills now live in [`openclaw/maintainers`](https://github.com/opencl
 - Periodically compare with maintainers repo and merge updates
 - Document any fork-specific changes
 
-### Recommendation
+### Recommendation (skills)
 
 Since your fork may have customizations or different versions of these skills, **Option A (keep fork version)** is recommended. You can always sync from the maintainers repo later if needed.
 
@@ -108,26 +109,28 @@ Since your fork may have customizations or different versions of these skills, *
 
 ## 2. `FORK-CHANGES.md` → Fork-Only (Never in Upstream)
 
-### Status
+### FORK-CHANGES status
 
 This file **never existed in upstream**. It was created in your fork to document fork-specific changes.
 
-### Why It Will Be Deleted
+### Why FORK-CHANGES will be deleted
 
 When merging upstream, git will see that `FORK-CHANGES.md` exists in your fork but not in upstream, and will attempt to delete it.
 
-### Action Required
+### Action required (FORK-CHANGES)
 
 **PRESERVE THIS FILE** during merge. Options:
 
 1. **Before merge:** Copy to a safe location
 2. **During merge:** When git marks it as deleted, restore it:
+
    ```bash
    git checkout main -- FORK-CHANGES.md
    ```
+
 3. **After merge:** Ensure it's committed back
 
-### References
+### FORK-CHANGES references
 
 This file is referenced in:
 
@@ -141,7 +144,7 @@ All these references should be preserved.
 
 ## 3. `.cursor/plans/` → Fork-Only (Never in Upstream)
 
-### Status
+### .cursor/plans status
 
 These planning files **never existed in upstream**. They were created in your fork for planning purposes.
 
@@ -152,22 +155,24 @@ These planning files **never existed in upstream**. They were created in your fo
 - `.cursor/plans/phased_stability_refactor_c67b81a1.plan.md`
 - `.cursor/plans/plan_review_and_updates_9a5ebf76.plan.md`
 
-### Why They Will Be Deleted
+### Why .cursor/plans will be deleted
 
 Upstream doesn't have these files, so git merge will try to delete them.
 
-### Action Required
+### Action required (.cursor/plans)
 
 **PRESERVE THESE FILES** if they contain important planning context:
 
 1. **Before merge:** Archive them if needed
 2. **During merge:** Restore them:
+
    ```bash
    git checkout main -- .cursor/plans/
    ```
+
 3. **After merge:** Commit them back
 
-### Recommendation
+### Recommendation (.cursor/plans)
 
 If these plans are still active or contain important context, preserve them. If they're historical/archived, you can let them be deleted or move them to an archive location.
 
@@ -175,7 +180,7 @@ If these plans are still active or contain important context, preserve them. If 
 
 ## 4. `.github/workflows/upstream-sync-test.yml` → Fork-Only (Never in Upstream)
 
-### Status
+### upstream-sync-test status
 
 This workflow **never existed in upstream**. It was created in your fork for daily upstream sync testing.
 
@@ -188,22 +193,24 @@ This workflow runs daily to:
 - Generate upstream preview summaries
 - Open issues when conflicts or failures are detected
 
-### Why It Will Be Deleted
+### Why upstream-sync-test will be deleted
 
 Upstream doesn't have this workflow, so git merge will try to delete it.
 
-### Action Required
+### Action required (upstream-sync-test)
 
 **PRESERVE THIS WORKFLOW** - it's critical for your fork's maintenance:
 
 1. **Before merge:** Ensure it's backed up
 2. **During merge:** Restore it:
+
    ```bash
    git checkout main -- .github/workflows/upstream-sync-test.yml
    ```
+
 3. **After merge:** Commit it back
 
-### References
+### upstream-sync-test references
 
 This workflow is referenced in:
 
@@ -241,6 +248,7 @@ This workflow is referenced in:
    ```
 
 4. **Commit restored files:**
+
    ```bash
    git add FORK-CHANGES.md .cursor/plans/ .github/workflows/upstream-sync-test.yml .agents/skills/
    git commit -m "preserve: restore fork-only files after upstream merge"
@@ -250,7 +258,7 @@ This workflow is referenced in:
 
 Create `.gitattributes` to tell git to always keep your version:
 
-```
+```gitattributes
 FORK-CHANGES.md merge=ours
 .cursor/plans/** merge=ours
 .github/workflows/upstream-sync-test.yml merge=ours

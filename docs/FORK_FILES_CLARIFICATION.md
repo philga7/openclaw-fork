@@ -2,11 +2,11 @@
 
 ## 1. Fork-Only Files During Merge
 
-### Your Understanding is Correct ✅
+### Your understanding is correct
 
 You're right that your fork-specific files (`FORK-CHANGES.md`, `.cursor/plans/`, `.github/workflows/upstream-sync-test.yml`) are committed in your fork and preserved in your git history.
 
-### However, During Merge...
+### However, during merge
 
 When you merge upstream into your fork, git compares the two trees:
 

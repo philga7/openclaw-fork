@@ -58,7 +58,7 @@ The upstream merge will bring significant improvements including iOS fixes, auth
 
 Based on git merge-tree analysis, conflicts are likely in:
 
-### High-Confidence Conflict Areas:
+### High-Confidence Conflict Areas
 
 1. **CHANGELOG.md**
    - Both sides have modifications
@@ -164,7 +164,7 @@ Based on git merge-tree analysis, conflicts are likely in:
 
 ## Fork-Specific Areas to Protect
 
-### Critical Fork Features (MUST PRESERVE):
+### Critical Fork Features (MUST PRESERVE)
 
 1. **ClawdBot-Next Prompt-Engine Integration**
    - `src/agents/prompt-engine/` directory
@@ -202,92 +202,108 @@ Based on git merge-tree analysis, conflicts are likely in:
 
 ## Testing Strategy Per Change Scope
 
-### Phase 1: Core System (Build & Type Check)
+### Phase 1 — Core System (Build and Type Check)
 
 - **Scope:** Build system, TypeScript, dependencies
 - **Commands:**
+
   ```bash
   pnpm install
   pnpm build
   pnpm tsgo
   ```
+
 - **Expected:** Should pass if conflicts resolved correctly
 
-### Phase 2: Prompt-Engine Integration
+### Phase 2 — Prompt-Engine Integration
 
 - **Scope:** `src/agents/prompt-engine/`, system-prompt.ts
 - **Commands:**
+
   ```bash
   pnpm test src/agents/system-prompt.test.ts
   pnpm test src/agents/prompt-engine/
   ```
+
 - **Expected:** All tests pass, prompt-engine still functional
 
-### Phase 3: Memory & Sessions
+### Phase 3 — Memory and Sessions
 
 - **Scope:** Memory handling, session paths
 - **Commands:**
+
   ```bash
   pnpm test src/agents/memory
   pnpm test src/config/sessions/
   ```
+
 - **Expected:** ENOENT handling works, session paths resolve correctly
 
-### Phase 4: Authentication & Pairing
+### Phase 4 — Authentication and Pairing
 
 - **Scope:** OAuth, pairing, auth profiles
 - **Commands:**
+
   ```bash
   pnpm test src/agents/auth-profiles/
   pnpm test src/gateway/pairing/
   ```
+
 - **Expected:** OAuth sync works, pairing preserves scopes
 
-### Phase 5: Channels
+### Phase 5 — Channels
 
 - **Scope:** Discord, Slack, Telegram, Signal, WhatsApp
 - **Commands:**
+
   ```bash
   pnpm test src/discord/
   pnpm test src/slack/
   pnpm test src/telegram/
   pnpm test src/signal/
   ```
+
 - **Expected:** Streaming fixes work, recipient IDs pass correctly
 
-### Phase 6: Gateway & Tools
+### Phase 6 — Gateway and Tools
 
 - **Scope:** Gateway stability, tool execution
 - **Commands:**
+
   ```bash
   pnpm test src/gateway/
   pnpm test src/agents/bash-tools/
   pnpm test src/agents/pi-tools/
   ```
+
 - **Expected:** Stderr piping works, singleton tools function
 
-### Phase 7: Cron & Scheduling
+### Phase 7 — Cron and Scheduling
 
 - **Scope:** Cron service, zombie recovery
 - **Commands:**
+
   ```bash
   pnpm test src/cron/
   ```
+
 - **Expected:** Anti-zombie recovery works, timer throttling active
 
-### Phase 8: Full Test Suite
+### Phase 8 — Full Test Suite
 
 - **Scope:** Everything
 - **Commands:**
+
   ```bash
   pnpm test
   pnpm test:coverage
   ```
+
 - **Expected:** All tests pass, coverage maintained
 
 ## Recommended Merge Strategy
 
-### Pre-Merge Checklist:
+### Pre-Merge Checklist
 
 1. ✅ Backup `FORK-CHANGES.md` to a safe location
 2. ✅ Backup `.agents/skills/` if you use them
@@ -296,7 +312,7 @@ Based on git merge-tree analysis, conflicts are likely in:
 5. ✅ Ensure working tree is clean
 6. ✅ Create a backup branch: `git branch backup-pre-merge-$(date +%Y%m%d)`
 
-### Merge Approach:
+### Merge Approach
 
 1. **Use merge (not rebase)** to preserve history
 2. **Resolve conflicts systematically** by category:
@@ -312,7 +328,7 @@ Based on git merge-tree analysis, conflicts are likely in:
    - Optionally restore `.agents/skills/` if needed
    - Update references if paths changed
 
-### Post-Merge Verification:
+### Post-Merge Verification
 
 1. Build succeeds
 2. Type check passes
