@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import fs from "node:fs";
 import type { StreamFn } from "@mariozechner/pi-agent-core";
 import type {
   AssistantMessage,
@@ -429,6 +430,38 @@ export function createOllamaStreamFn(baseUrl: string): StreamFn {
 
         const reason: Extract<StopReason, "stop" | "length" | "toolUse"> =
           assistantMessage.stopReason === "toolUse" ? "toolUse" : "stop";
+
+        // #region agent log
+        const _asstTextBlocks = assistantMessage.content.filter(
+          (c: { type: string }) => c.type === "text",
+        );
+        const _asstToolBlocks = assistantMessage.content.filter(
+          (c: { type: string }) => c.type === "toolCall",
+        );
+        try {
+          fs.appendFileSync(
+            "/tmp/openclaw-debug-15b692.log",
+            JSON.stringify({
+              sessionId: "15b692",
+              hypothesisId: "H1",
+              location: "ollama-stream.ts:streamDone",
+              message: "ollama stream final message",
+              data: {
+                modelId: model.id,
+                provider: model.provider,
+                stopReason: assistantMessage.stopReason,
+                contentBlockCount: assistantMessage.content.length,
+                textBlockCount: _asstTextBlocks.length,
+                toolCallBlockCount: _asstToolBlocks.length,
+                accumulatedContentLen: accumulatedContent.length,
+                accumulatedContentPreview: accumulatedContent.slice(0, 200),
+                doneReason: finalResponse.done_reason,
+              },
+              timestamp: Date.now(),
+            }) + "\n",
+          );
+        } catch {}
+        // #endregion
 
         stream.push({
           type: "done",

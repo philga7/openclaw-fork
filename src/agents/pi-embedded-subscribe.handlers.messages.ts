@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import type { AgentEvent, AgentMessage } from "@mariozechner/pi-agent-core";
 import { parseReplyDirectives } from "../auto-reply/reply/reply-directives.js";
 import { SILENT_REPLY_TOKEN } from "../auto-reply/tokens.js";
@@ -259,6 +260,32 @@ export function handleMessageEnd(
   ctx.noteLastAssistant(assistantMessage);
   ctx.recordAssistantUsage((assistantMessage as { usage?: unknown }).usage);
   promoteThinkingTagsToBlocks(assistantMessage);
+  // #region agent log
+  const _rawTextDbg = extractAssistantText(assistantMessage);
+  try {
+    const am = assistantMessage as unknown as Record<string, unknown>;
+    const cnt = Array.isArray(am.content) ? (am.content as unknown[]).length : 0;
+    fs.appendFileSync(
+      "/tmp/openclaw-debug-15b692.log",
+      JSON.stringify({
+        sessionId: "15b692",
+        hypothesisId: "H1,H2,H3",
+        location: "messages.ts:handleMessageEnd",
+        message: "message_end raw content",
+        data: {
+          runId: ctx.params.runId,
+          rawTextLen: _rawTextDbg.length,
+          rawTextPreview: _rawTextDbg.slice(0, 200),
+          stopReason: am.stopReason,
+          contentBlockCount: cnt,
+          emittedAssistantUpdate: ctx.state.emittedAssistantUpdate,
+          enforceFinalTag: ctx.params.enforceFinalTag,
+        },
+        timestamp: Date.now(),
+      }) + "\n",
+    );
+  } catch {}
+  // #endregion
 
   const rawText = extractAssistantText(assistantMessage);
   appendRawStream({
@@ -270,10 +297,37 @@ export function handleMessageEnd(
     rawThinking: extractAssistantThinking(assistantMessage),
   });
 
+  const _strippedText = ctx.stripBlockTags(rawText, { thinking: false, final: false });
   const text = resolveSilentReplyFallbackText({
-    text: ctx.stripBlockTags(rawText, { thinking: false, final: false }),
+    text: _strippedText,
     messagingToolSentTexts: ctx.state.messagingToolSentTexts,
   });
+  // #region agent log
+  try {
+    fs.appendFileSync(
+      "/tmp/openclaw-debug-15b692.log",
+      JSON.stringify({
+        sessionId: "15b692",
+        hypothesisId: "H2,H3,H4",
+        location: "messages.ts:handleMessageEnd:afterStrip",
+        message: "after stripBlockTags and fallback",
+        data: {
+          runId: ctx.params.runId,
+          rawTextLen: rawText.length,
+          strippedTextLen: _strippedText.length,
+          strippedTextPreview: _strippedText.slice(0, 200),
+          resolvedTextLen: text.length,
+          resolvedTextPreview: text.slice(0, 200),
+          messagingToolSentTextsCount: ctx.state.messagingToolSentTexts.length,
+          messagingToolSentTextsPreview: ctx.state.messagingToolSentTexts.map((t: string) =>
+            t.slice(0, 60),
+          ),
+        },
+        timestamp: Date.now(),
+      }) + "\n",
+    );
+  } catch {}
+  // #endregion
   const rawThinking =
     ctx.state.includeReasoning || ctx.state.streamReasoning
       ? extractAssistantThinking(assistantMessage) || extractThinkingFromTaggedText(rawText)

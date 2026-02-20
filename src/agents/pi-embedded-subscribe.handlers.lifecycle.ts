@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import { emitAgentEvent } from "../infra/agent-events.js";
 import { createInlineCodeState } from "../markdown/code-spans.js";
 import { formatAssistantErrorText } from "./pi-embedded-helpers.js";
@@ -26,6 +27,32 @@ export function handleAgentStart(ctx: EmbeddedPiSubscribeContext) {
 }
 
 export function handleAgentEnd(ctx: EmbeddedPiSubscribeContext) {
+  // #region agent log
+  try {
+    const la = ctx.state.lastAssistant as unknown as Record<string, unknown> | undefined;
+    fs.appendFileSync(
+      "/tmp/openclaw-debug-15b692.log",
+      JSON.stringify({
+        sessionId: "15b692",
+        hypothesisId: "H1",
+        location: "lifecycle.ts:handleAgentEnd",
+        message: "agent_end state",
+        data: {
+          runId: ctx.params.runId,
+          assistantTextsCount: ctx.state.assistantTexts.length,
+          assistantTexts: ctx.state.assistantTexts.map((t: string) => t.slice(0, 80)),
+          emittedAssistantUpdate: ctx.state.emittedAssistantUpdate,
+          lastAssistantRole: la?.role,
+          lastAssistantStopReason: la?.stopReason,
+          messagingToolSentTextsCount: ctx.state.messagingToolSentTexts.length,
+          blockBuffer: ctx.state.blockBuffer.slice(0, 80),
+          deltaBuffer: ctx.state.deltaBuffer.slice(0, 80),
+        },
+        timestamp: Date.now(),
+      }) + "\n",
+    );
+  } catch {}
+  // #endregion
   const lastAssistant = ctx.state.lastAssistant;
   const isError = isAssistantMessage(lastAssistant) && lastAssistant.stopReason === "error";
 
