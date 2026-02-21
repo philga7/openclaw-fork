@@ -98,6 +98,7 @@ Think of the suites as “increasing realism” (and increasing flakiness/cost):
 Use this decision table:
 
 - Editing logic/tests: run `pnpm test` (and `pnpm test:coverage` if you changed a lot)
+- Touching plugins, hooks, or CLI registration: run `pnpm test src/plugins/ src/hooks/` (scoped unit) or `pnpm test:docker:plugins` for full extension load smoke
 - Touching gateway networking / WS protocol / pairing: add `pnpm test:e2e`
 - Debugging “my bot is down” / provider-specific failures / tool calling: run a narrowed `pnpm test:live`
 

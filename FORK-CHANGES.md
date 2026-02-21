@@ -128,6 +128,8 @@ Operational checklist when running this fork with [OpenClaw-Foundry](https://git
   - `.env.example` documents `GATEWAY_BOOTSTRAP_TIMEOUT=120000` as the recommended baseline when running heavy Foundry-style plugin stacks so cold-start SIGKILLs are less likely.
 - **Foundry-side config writes (external repo)**
   - When updating the OpenClaw-Foundry extension, ensure its `foundry_write_extension` (or equivalent) performs a pre-flight check before committing any `models.providers` or provider entries into `openclaw.json`: for each new provider, verify the corresponding API key/token environment variables are present, and abort with a clear error if they are not. This keeps the gateway from booting into an invalid provider config.
+- **foundry_write_extension null checks (external repo)**
+  - Fix applied in openclaw-foundry (branch `fix/foundry-write-extension-null-checks`): tool template generation in `writeExtension` was failing with "Cannot read properties of undefined (reading STR)" when property `type` or `description` was missing. Added fallbacks: `v.type || "string"`, `v.description || k`, and `t.description || t.name`.
 
 ### Discord typing and message hooks
 
