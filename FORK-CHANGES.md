@@ -130,6 +130,8 @@ Operational checklist when running this fork with [OpenClaw-Foundry](https://git
   - When updating the OpenClaw-Foundry extension, ensure its `foundry_write_extension` (or equivalent) performs a pre-flight check before committing any `models.providers` or provider entries into `openclaw.json`: for each new provider, verify the corresponding API key/token environment variables are present, and abort with a clear error if they are not. This keeps the gateway from booting into an invalid provider config.
 - **foundry_write_extension null checks (external repo)**
   - Fix applied in openclaw-foundry (branch `fix/foundry-write-extension-null-checks`): tool template generation in `writeExtension` was failing with "Cannot read properties of undefined (reading STR)" when property `type` or `description` was missing. Added fallbacks: `v.type || "string"`, `v.description || k`, and `t.description || t.name`.
+- **Vendored foundry-openclaw duplicate plugin**
+  - This fork vendors `foundry-openclaw` in `extensions/foundry-openclaw`. When it is also present in `~/.openclaw/extensions` or `plugins.load.paths`, discovery produced two candidates and emitted "duplicate plugin id detected". Fix: in `src/plugins/discovery.ts`, when a bundled `foundry-openclaw` exists, non-bundled copies from config/workspace/global are filtered out so only the vendored extension loads. Load as bundled only; omit from `plugins.entries` and avoid installing to `~/.openclaw/extensions` when using the fork.
 
 ### Discord typing and message hooks
 

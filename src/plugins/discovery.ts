@@ -601,5 +601,19 @@ export function discoverOpenClawPlugins(params: {
     });
   }
 
+  // Fork: when foundry-openclaw is vendored in extensions/, skip non-bundled copies
+  // to avoid duplicate-plugin warnings (bundled + global/load.paths).
+  const foundryId = "foundry-openclaw";
+  const hasBundledFoundry = candidates.some(
+    (c) => c.origin === "bundled" && path.basename(c.rootDir) === foundryId,
+  );
+  if (hasBundledFoundry) {
+    const filtered = candidates.filter(
+      (c) => c.origin === "bundled" || path.basename(c.rootDir) !== foundryId,
+    );
+    candidates.length = 0;
+    candidates.push(...filtered);
+  }
+
   return { candidates, diagnostics };
 }
