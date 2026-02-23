@@ -1,4 +1,4 @@
-import fs from "node:fs/promises";
+import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { expandHomePrefix, resolveRequiredHomeDir } from "../../infra/home-dir.js";
@@ -55,46 +55,6 @@ export function resolveSessionFilePathOptions(params: {
   return undefined;
 }
 
-/**
- * Returns the most recently modified session transcript for an agent, if any.
- * Session id is derived from the filename (stem of the .jsonl file).
- */
-export async function getLatestSessionTranscriptForAgent(
-  agentId?: string,
-): Promise<{ sessionId: string; sessionFile: string } | null> {
-  const dir = resolveSessionTranscriptsDirForAgent(agentId);
-  let entries: Array<{ name: string; mtimeMs: number }>;
-  try {
-    const files = await fs.readdir(dir, { withFileTypes: true });
-    const jsonl = files.filter((e) => e.isFile() && e.name.endsWith(".jsonl"));
-    if (jsonl.length === 0) {
-      return null;
-    }
-    const withStat = await Promise.all(
-      jsonl.map(async (e) => {
-        const full = path.join(dir, e.name);
-        const stat = await fs.stat(full).catch(() => null);
-        return { name: e.name, mtimeMs: stat?.mtimeMs ?? 0 };
-      }),
-    );
-    entries = withStat.filter((e) => e.mtimeMs > 0);
-  } catch (err) {
-    const code = (err as NodeJS.ErrnoException).code;
-    if (code === "ENOENT") {
-      return null;
-    }
-    throw err;
-  }
-  if (entries.length === 0) {
-    return null;
-  }
-  entries.sort((a, b) => b.mtimeMs - a.mtimeMs);
-  const first = entries[0];
-  const sessionId = first.name.replace(/\.jsonl$/i, "");
-  const sessionFile = path.join(dir, first.name);
-  return { sessionId, sessionFile };
-}
-
 export const SAFE_SESSION_ID_RE = /^[a-z0-9][a-z0-9._-]{0,127}$/i;
 
 export function validateSessionId(sessionId: string): string {
@@ -117,8 +77,10 @@ function resolvePathFromAgentSessionsDir(
   agentSessionsDir: string,
   candidateAbsPath: string,
 ): string | undefined {
-  const agentBase = path.resolve(agentSessionsDir);
-  const relative = path.relative(agentBase, candidateAbsPath);
+  const agentBase =
+    safeRealpathSync(path.resolve(agentSessionsDir)) ?? path.resolve(agentSessionsDir);
+  const realCandidate = safeRealpathSync(candidateAbsPath) ?? candidateAbsPath;
+  const relative = path.relative(agentBase, realCandidate);
   if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) {
     return undefined;
   }
@@ -153,6 +115,14 @@ function extractAgentIdFromAbsoluteSessionPath(candidateAbsPath: string): string
   return agentId || undefined;
 }
 
+function safeRealpathSync(filePath: string): string | undefined {
+  try {
+    return fs.realpathSync(filePath);
+  } catch {
+    return undefined;
+  }
+}
+
 function resolvePathWithinSessionsDir(
   sessionsDir: string,
   candidate: string,
@@ -163,21 +133,28 @@ function resolvePathWithinSessionsDir(
     throw new Error("Session file path must not be empty");
   }
   const resolvedBase = path.resolve(sessionsDir);
+  const realBase = safeRealpathSync(resolvedBase) ?? resolvedBase;
   // Normalize absolute paths that are within the sessions directory.
   // Older versions stored absolute sessionFile paths in sessions.json;
   // convert them to relative so the containment check passes.
-  const normalized = path.isAbsolute(trimmed) ? path.relative(resolvedBase, trimmed) : trimmed;
-  if (normalized.startsWith("..") && path.isAbsolute(trimmed)) {
+  const realTrimmed = path.isAbsolute(trimmed) ? (safeRealpathSync(trimmed) ?? trimmed) : trimmed;
+  const normalized = path.isAbsolute(realTrimmed)
+    ? path.relative(realBase, realTrimmed)
+    : realTrimmed;
+  if (normalized.startsWith("..") && path.isAbsolute(realTrimmed)) {
     const tryAgentFallback = (agentId: string): string | undefined => {
       const normalizedAgentId = normalizeAgentId(agentId);
-      const siblingSessionsDir = resolveSiblingAgentSessionsDir(resolvedBase, normalizedAgentId);
+      const siblingSessionsDir = resolveSiblingAgentSessionsDir(realBase, normalizedAgentId);
       if (siblingSessionsDir) {
-        const siblingResolved = resolvePathFromAgentSessionsDir(siblingSessionsDir, trimmed);
+        const siblingResolved = resolvePathFromAgentSessionsDir(siblingSessionsDir, realTrimmed);
         if (siblingResolved) {
           return siblingResolved;
         }
       }
-      return resolvePathFromAgentSessionsDir(resolveAgentSessionsDir(normalizedAgentId), trimmed);
+      return resolvePathFromAgentSessionsDir(
+        resolveAgentSessionsDir(normalizedAgentId),
+        realTrimmed,
+      );
     };
 
     const explicitAgentId = opts?.agentId?.trim();
@@ -187,7 +164,7 @@ function resolvePathWithinSessionsDir(
         return resolvedFromAgent;
       }
     }
-    const extractedAgentId = extractAgentIdFromAbsoluteSessionPath(trimmed);
+    const extractedAgentId = extractAgentIdFromAbsoluteSessionPath(realTrimmed);
     if (extractedAgentId) {
       const resolvedFromPath = tryAgentFallback(extractedAgentId);
       if (resolvedFromPath) {
@@ -197,13 +174,13 @@ function resolvePathWithinSessionsDir(
       // Accept it even if the root directory differs from the current env
       // (e.g., OPENCLAW_STATE_DIR changed between session creation and resolution).
       // The structural pattern provides sufficient containment guarantees.
-      return path.resolve(trimmed);
+      return path.resolve(realTrimmed);
     }
   }
   if (!normalized || normalized.startsWith("..") || path.isAbsolute(normalized)) {
     throw new Error("Session file path must be within sessions directory");
   }
-  return path.resolve(resolvedBase, normalized);
+  return path.resolve(realBase, normalized);
 }
 
 export function resolveSessionTranscriptPathInDir(
@@ -241,9 +218,61 @@ export function resolveSessionFilePath(
   const sessionsDir = resolveSessionsDir(opts);
   const candidate = entry?.sessionFile?.trim();
   if (candidate) {
-    return resolvePathWithinSessionsDir(sessionsDir, candidate, { agentId: opts?.agentId });
+    try {
+      return resolvePathWithinSessionsDir(sessionsDir, candidate, { agentId: opts?.agentId });
+    } catch {
+      // Keep handlers alive when persisted metadata is stale/corrupt.
+    }
   }
   return resolveSessionTranscriptPathInDir(sessionId, sessionsDir);
+}
+
+/** Returns the latest session transcript for an agent, or null if none. */
+export async function getLatestSessionTranscriptForAgent(
+  agentId: string,
+): Promise<{ sessionId: string; sessionFile: string } | null> {
+  const fsAsync = await import("node:fs/promises");
+  const storePath = resolveDefaultSessionStorePath(agentId);
+  let raw: string;
+  try {
+    raw = await fsAsync.readFile(storePath, "utf-8");
+  } catch {
+    return null;
+  }
+  if (!raw.trim()) {
+    return null;
+  }
+  let store: Record<string, { sessionId?: string; updatedAt?: number; sessionFile?: string }>;
+  try {
+    store = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (!store || typeof store !== "object" || Array.isArray(store)) {
+    return null;
+  }
+  const sessionsDir = resolveSessionTranscriptsDirForAgent(agentId);
+  let best: { sessionId: string; sessionFile: string; updatedAt: number } | null = null;
+  for (const entry of Object.values(store)) {
+    if (!entry || typeof entry !== "object") {
+      continue;
+    }
+    const sessionId = entry.sessionId ?? "";
+    const updatedAt = typeof entry.updatedAt === "number" ? entry.updatedAt : 0;
+    if (!sessionId || updatedAt <= (best?.updatedAt ?? -1)) {
+      continue;
+    }
+    let sessionFile: string;
+    try {
+      sessionFile = entry.sessionFile
+        ? resolvePathWithinSessionsDir(sessionsDir, entry.sessionFile, { agentId })
+        : resolveSessionTranscriptPathInDir(sessionId, sessionsDir);
+    } catch {
+      continue;
+    }
+    best = { sessionId, sessionFile, updatedAt };
+  }
+  return best ? { sessionId: best.sessionId, sessionFile: best.sessionFile } : null;
 }
 
 export function resolveStorePath(store?: string, opts?: { agentId?: string }) {

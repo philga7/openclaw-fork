@@ -112,8 +112,8 @@ describe("runMessageAction threading auto-injection", () => {
 
   afterEach(() => {
     setActivePluginRegistry(createTestRegistry([]));
-    mocks.executeSendAction.mockReset();
-    mocks.recordSessionMetaFromInbound.mockReset();
+    mocks.executeSendAction.mockClear();
+    mocks.recordSessionMetaFromInbound.mockClear();
   });
 
   it.each([

@@ -13,9 +13,13 @@ const require = createRequire(import.meta.url);
 /** Lazy jiti instance for loading .ts hooks so they run with require in scope. */
 let jitiLoader: ((id: string) => unknown) | null = null;
 function getJitiLoader(): (id: string) => unknown {
-  if (jitiLoader) return jitiLoader;
+  if (jitiLoader) {
+    return jitiLoader;
+  }
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { createJiti } = require("jiti") as { createJiti: (url: string, opts?: object) => (id: string) => unknown };
+  const { createJiti } = require("jiti") as {
+    createJiti: (url: string, opts?: object) => (id: string) => unknown;
+  };
   jitiLoader = createJiti(import.meta.url, {
     interopDefault: true,
     extensions: [".ts", ".tsx", ".mts", ".cts", ".js", ".mjs", ".cjs", ".json"],
@@ -64,7 +68,10 @@ export async function loadHookModule(filePath: string): Promise<Record<string, u
       if (isTsLike) {
         try {
           const mod = getJitiLoader()(resolved);
-          return (mod != null && typeof mod === "object" ? mod : { default: mod }) as Record<string, unknown>;
+          return (mod != null && typeof mod === "object" ? mod : { default: mod }) as Record<
+            string,
+            unknown
+          >;
         } catch {
           // jiti failed (e.g. missing dep); fall back to import() so tsx/loaders can try
         }
@@ -89,7 +96,10 @@ export async function loadHookModule(filePath: string): Promise<Record<string, u
       } catch {
         if (isTsLike) {
           const mod = getJitiLoader()(resolved);
-          return (mod != null && typeof mod === "object" ? mod : { default: mod }) as Record<string, unknown>;
+          return (mod != null && typeof mod === "object" ? mod : { default: mod }) as Record<
+            string,
+            unknown
+          >;
         }
         throw err;
       }

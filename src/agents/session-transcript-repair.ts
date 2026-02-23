@@ -1,6 +1,9 @@
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import { extractToolCallsFromAssistant, extractToolResultId } from "./tool-call-id.js";
 
+const TOOL_CALL_NAME_MAX_CHARS = 64;
+const TOOL_CALL_NAME_RE = /^[A-Za-z0-9_-]+$/;
+
 type ToolCallBlock = {
   type?: unknown;
   id?: unknown;
@@ -20,34 +23,11 @@ function isToolCallBlock(block: unknown): block is ToolCallBlock {
   );
 }
 
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
 function hasToolCallInput(block: ToolCallBlock): boolean {
-  const rawInput = "input" in block ? block.input : undefined;
-  const rawArgs = "arguments" in block ? block.arguments : undefined;
-
-  // Accept objects directly; try to parse strings as JSON objects.
-  for (const raw of [rawInput, rawArgs]) {
-    if (raw === undefined || raw === null) {
-      continue;
-    }
-    if (isPlainObject(raw)) {
-      return true;
-    }
-    if (typeof raw === "string") {
-      try {
-        const parsed: unknown = JSON.parse(raw);
-        if (isPlainObject(parsed)) {
-          return true;
-        }
-      } catch {
-        // unparseable string → not valid tool call input
-      }
-    }
-  }
-  return false;
+  const hasInput = "input" in block ? block.input !== undefined && block.input !== null : false;
+  const hasArguments =
+    "arguments" in block ? block.arguments !== undefined && block.arguments !== null : false;
+  return hasInput || hasArguments;
 }
 
 function hasNonEmptyStringField(value: unknown): boolean {
@@ -58,8 +38,38 @@ function hasToolCallId(block: ToolCallBlock): boolean {
   return hasNonEmptyStringField(block.id);
 }
 
-function hasToolCallName(block: ToolCallBlock): boolean {
-  return hasNonEmptyStringField(block.name);
+function normalizeAllowedToolNames(allowedToolNames?: Iterable<string>): Set<string> | null {
+  if (!allowedToolNames) {
+    return null;
+  }
+  const normalized = new Set<string>();
+  for (const name of allowedToolNames) {
+    if (typeof name !== "string") {
+      continue;
+    }
+    const trimmed = name.trim();
+    if (trimmed) {
+      normalized.add(trimmed.toLowerCase());
+    }
+  }
+  return normalized.size > 0 ? normalized : null;
+}
+
+function hasToolCallName(block: ToolCallBlock, allowedToolNames: Set<string> | null): boolean {
+  if (typeof block.name !== "string") {
+    return false;
+  }
+  const trimmed = block.name.trim();
+  if (!trimmed || trimmed !== block.name) {
+    return false;
+  }
+  if (trimmed.length > TOOL_CALL_NAME_MAX_CHARS || !TOOL_CALL_NAME_RE.test(trimmed)) {
+    return false;
+  }
+  if (!allowedToolNames) {
+    return true;
+  }
+  return allowedToolNames.has(trimmed.toLowerCase());
 }
 
 function makeMissingToolResult(params: {
@@ -89,6 +99,10 @@ export type ToolCallInputRepairReport = {
   droppedAssistantMessages: number;
 };
 
+export type ToolCallInputRepairOptions = {
+  allowedToolNames?: Iterable<string>;
+};
+
 export function stripToolResultDetails(messages: AgentMessage[]): AgentMessage[] {
   let touched = false;
   const out: AgentMessage[] = [];
@@ -108,27 +122,15 @@ export function stripToolResultDetails(messages: AgentMessage[]): AgentMessage[]
   return touched ? out : messages;
 }
 
-function describeToolCallDefect(block: ToolCallBlock): string {
-  const issues: string[] = [];
-  if (!hasToolCallId(block)) {
-    issues.push("missing id");
-  }
-  if (!hasToolCallName(block)) {
-    issues.push(`invalid name (${typeof block.name === "string" ? "empty" : typeof block.name})`);
-  }
-  if (!hasToolCallInput(block)) {
-    const rawInput =
-      "input" in block ? block.input : "arguments" in block ? block.arguments : undefined;
-    issues.push(`invalid arguments (${rawInput === null ? "null" : typeof rawInput})`);
-  }
-  return issues.join(", ");
-}
-
-export function repairToolCallInputs(messages: AgentMessage[]): ToolCallInputRepairReport {
+export function repairToolCallInputs(
+  messages: AgentMessage[],
+  options?: ToolCallInputRepairOptions,
+): ToolCallInputRepairReport {
   let droppedToolCalls = 0;
   let droppedAssistantMessages = 0;
   let changed = false;
   const out: AgentMessage[] = [];
+  const allowedToolNames = normalizeAllowedToolNames(options?.allowedToolNames);
 
   for (const msg of messages) {
     if (!msg || typeof msg !== "object") {
@@ -147,13 +149,10 @@ export function repairToolCallInputs(messages: AgentMessage[]): ToolCallInputRep
     for (const block of msg.content) {
       if (
         isToolCallBlock(block) &&
-        (!hasToolCallInput(block) || !hasToolCallId(block) || !hasToolCallName(block))
+        (!hasToolCallInput(block) ||
+          !hasToolCallId(block) ||
+          !hasToolCallName(block, allowedToolNames))
       ) {
-        const tcBlock = block as ToolCallBlock;
-        const defect = describeToolCallDefect(tcBlock);
-        const toolName =
-          typeof tcBlock.name === "string" && tcBlock.name ? tcBlock.name : "<unknown>";
-        console.warn(`[transcript-repair] Dropping malformed tool call "${toolName}": ${defect}`);
         droppedToolCalls += 1;
         droppedInMessage += 1;
         changed = true;
@@ -164,9 +163,6 @@ export function repairToolCallInputs(messages: AgentMessage[]): ToolCallInputRep
 
     if (droppedInMessage > 0) {
       if (nextContent.length === 0) {
-        console.warn(
-          `[transcript-repair] Dropping entire assistant message: all ${droppedInMessage} tool call(s) were malformed`,
-        );
         droppedAssistantMessages += 1;
         changed = true;
         continue;
@@ -185,8 +181,11 @@ export function repairToolCallInputs(messages: AgentMessage[]): ToolCallInputRep
   };
 }
 
-export function sanitizeToolCallInputs(messages: AgentMessage[]): AgentMessage[] {
-  return repairToolCallInputs(messages).messages;
+export function sanitizeToolCallInputs(
+  messages: AgentMessage[],
+  options?: ToolCallInputRepairOptions,
+): AgentMessage[] {
+  return repairToolCallInputs(messages, options).messages;
 }
 
 export function sanitizeToolUseResultPairing(messages: AgentMessage[]): AgentMessage[] {

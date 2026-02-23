@@ -11,7 +11,12 @@ import {
 } from "./auth.js";
 import { normalizeControlUiBasePath } from "./control-ui-shared.js";
 import { resolveHooksConfig } from "./hooks.js";
-import { isLoopbackHost, isValidIPv4, resolveGatewayBindHost } from "./net.js";
+import {
+  isLoopbackHost,
+  isTrustedProxyAddress,
+  isValidIPv4,
+  resolveGatewayBindHost,
+} from "./net.js";
 import { mergeGatewayTailscaleConfig } from "./startup-auth.js";
 
 export type GatewayRuntimeConfig = {
@@ -20,6 +25,7 @@ export type GatewayRuntimeConfig = {
   openAiChatCompletionsEnabled: boolean;
   openResponsesEnabled: boolean;
   openResponsesConfig?: import("../config/types.gateway.js").GatewayHttpResponsesConfig;
+  strictTransportSecurityHeader?: string;
   controlUiBasePath: string;
   controlUiRoot?: string;
   resolvedAuth: ResolvedGatewayAuth;
@@ -73,6 +79,15 @@ export async function resolveGatewayRuntimeConfig(params: {
     false;
   const openResponsesConfig = params.cfg.gateway?.http?.endpoints?.responses;
   const openResponsesEnabled = params.openResponsesEnabled ?? openResponsesConfig?.enabled ?? false;
+  const strictTransportSecurityConfig =
+    params.cfg.gateway?.http?.securityHeaders?.strictTransportSecurity;
+  const strictTransportSecurityHeader =
+    strictTransportSecurityConfig === false
+      ? undefined
+      : typeof strictTransportSecurityConfig === "string" &&
+          strictTransportSecurityConfig.trim().length > 0
+        ? strictTransportSecurityConfig.trim()
+        : undefined;
   const controlUiBasePath = normalizeControlUiBasePath(params.cfg.gateway?.controlUi?.basePath);
   const controlUiRootRaw = params.cfg.gateway?.controlUi?.root;
   const controlUiRoot =
@@ -117,15 +132,20 @@ export async function resolveGatewayRuntimeConfig(params: {
   }
 
   if (authMode === "trusted-proxy") {
-    if (isLoopbackHost(bindHost)) {
-      throw new Error(
-        "gateway auth mode=trusted-proxy makes no sense with bind=loopback; use bind=lan or bind=custom with gateway.trustedProxies configured",
-      );
-    }
     if (trustedProxies.length === 0) {
       throw new Error(
         "gateway auth mode=trusted-proxy requires gateway.trustedProxies to be configured with at least one proxy IP",
       );
+    }
+    if (isLoopbackHost(bindHost)) {
+      const hasLoopbackTrustedProxy =
+        isTrustedProxyAddress("127.0.0.1", trustedProxies) ||
+        isTrustedProxyAddress("::1", trustedProxies);
+      if (!hasLoopbackTrustedProxy) {
+        throw new Error(
+          "gateway auth mode=trusted-proxy with bind=loopback requires gateway.trustedProxies to include 127.0.0.1, ::1, or a loopback CIDR",
+        );
+      }
     }
   }
 
@@ -137,6 +157,7 @@ export async function resolveGatewayRuntimeConfig(params: {
     openResponsesConfig: openResponsesConfig
       ? { ...openResponsesConfig, enabled: openResponsesEnabled }
       : undefined,
+    strictTransportSecurityHeader,
     controlUiBasePath,
     controlUiRoot,
     resolvedAuth,

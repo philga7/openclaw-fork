@@ -3,19 +3,18 @@
  *
  * Loads hook handlers from external modules based on configuration
  * and from directory-based discovery (bundled, managed, workspace)
- * Supports both ESM and CommonJS hook modules.
  */
 
 import path from "node:path";
-import { pathToFileURL } from "node:url";
 import type { OpenClawConfig } from "../config/config.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { isPathInsideWithRealpath } from "../security/scan-paths.js";
 import { resolveHookConfig } from "./config.js";
 import { shouldIncludeHook } from "./config.js";
+import { buildImportUrl } from "./import-url.js";
 import type { InternalHookHandler } from "./internal-hooks.js";
 import { registerInternalHook } from "./internal-hooks.js";
-import { getHandlerFromModule, loadHookModule } from "./load-module.js";
+import { resolveFunctionModuleExport } from "./module-loader.js";
 import { loadWorkspaceHookEntries } from "./workspace.js";
 
 const log = createSubsystemLogger("hooks:loader");
@@ -84,16 +83,18 @@ export async function loadInternalHooks(
           );
           continue;
         }
-        // Import handler module with cache-busting
-        const url = pathToFileURL(entry.hook.handlerPath).href;
-        const cacheBustedUrl = `${url}?t=${Date.now()}`;
-        const mod = (await import(cacheBustedUrl)) as Record<string, unknown>;
+        // Import handler module — only cache-bust mutable (workspace/managed) hooks
+        const importUrl = buildImportUrl(entry.hook.handlerPath, entry.hook.source);
+        const mod = (await import(importUrl)) as Record<string, unknown>;
 
         // Get handler function (default or named export)
         const exportName = entry.metadata?.export ?? "default";
-        const handler = getHandlerFromModule(mod, exportName);
+        const handler = resolveFunctionModuleExport<InternalHookHandler>({
+          mod,
+          exportName,
+        });
 
-        if (typeof handler !== "function") {
+        if (!handler) {
           log.error(`Handler '${exportName}' from ${entry.hook.name} is not a function`);
           continue;
         }
@@ -106,7 +107,7 @@ export async function loadInternalHooks(
         }
 
         for (const event of events) {
-          registerInternalHook(event, handler as InternalHookHandler);
+          registerInternalHook(event, handler);
         }
 
         log.info(
@@ -159,16 +160,23 @@ export async function loadInternalHooks(
         continue;
       }
 
-      const mod = await loadHookModule(modulePath);
-      const exportName = handlerConfig.export ?? "default";
-      const handler = getHandlerFromModule(mod, exportName);
+      // Legacy handlers are always workspace-relative, so use mtime-based cache busting
+      const importUrl = buildImportUrl(modulePath, "openclaw-workspace");
+      const mod = (await import(importUrl)) as Record<string, unknown>;
 
-      if (typeof handler !== "function") {
+      // Get the handler function
+      const exportName = handlerConfig.export ?? "default";
+      const handler = resolveFunctionModuleExport<InternalHookHandler>({
+        mod,
+        exportName,
+      });
+
+      if (!handler) {
         log.error(`Handler '${exportName}' from ${modulePath} is not a function`);
         continue;
       }
 
-      registerInternalHook(handlerConfig.event, handler as InternalHookHandler);
+      registerInternalHook(handlerConfig.event, handler);
       log.info(
         `Registered hook (legacy): ${handlerConfig.event} -> ${modulePath}${exportName !== "default" ? `#${exportName}` : ""}`,
       );

@@ -1,14 +1,11 @@
+import { createHmac, createHash } from "node:crypto";
 import type { ReasoningLevel, ThinkLevel } from "../auto-reply/thinking.js";
 import { SILENT_REPLY_TOKEN } from "../auto-reply/tokens.js";
 import type { MemoryCitationsMode } from "../config/types.memory.js";
 import { listDeliverableMessageChannels } from "../utils/message-channel.js";
 import type { ResolvedTimeFormat } from "./date-time.js";
 import type { EmbeddedContextFile } from "./pi-embedded-helpers.js";
-import { SkillInjector } from "./prompt-engine/injector.js";
-import { SkillsLoader } from "./prompt-engine/skills-loader.js";
-import { SYSTEM_DIRECTIVES } from "./prompt-engine/system-directives.js";
-import { Triangulator } from "./prompt-engine/triangulator.js";
-import type { IntentContext } from "./prompt-engine/types.js";
+import type { EmbeddedSandboxInfo } from "./pi-embedded-runner/types.js";
 import { sanitizeForPromptLiteral } from "./sanitize-for-prompt.js";
 
 /**
@@ -18,6 +15,7 @@ import { sanitizeForPromptLiteral } from "./sanitize-for-prompt.js";
  * - "none": Just basic identity line, no sections
  */
 export type PromptMode = "full" | "minimal" | "none";
+type OwnerIdDisplay = "raw" | "hash";
 
 function buildSkillsSection(params: {
   skillsPrompt?: string;
@@ -75,7 +73,31 @@ function buildUserIdentitySection(ownerLine: string | undefined, isMinimal: bool
   if (!ownerLine || isMinimal) {
     return [];
   }
-  return ["## User Identity", ownerLine, ""];
+  return ["## Authorized Senders", ownerLine, ""];
+}
+
+function formatOwnerDisplayId(ownerId: string, ownerDisplaySecret?: string) {
+  const hasSecret = ownerDisplaySecret?.trim();
+  const digest = hasSecret
+    ? createHmac("sha256", hasSecret).update(ownerId).digest("hex")
+    : createHash("sha256").update(ownerId).digest("hex");
+  return digest.slice(0, 12);
+}
+
+function buildOwnerIdentityLine(
+  ownerNumbers: string[],
+  ownerDisplay: OwnerIdDisplay,
+  ownerDisplaySecret?: string,
+) {
+  const normalized = ownerNumbers.map((value) => value.trim()).filter(Boolean);
+  if (normalized.length === 0) {
+    return undefined;
+  }
+  const displayOwnerNumbers =
+    ownerDisplay === "hash"
+      ? normalized.map((ownerId) => formatOwnerDisplayId(ownerId, ownerDisplaySecret))
+      : normalized;
+  return `Authorized senders: ${displayOwnerNumbers.join(", ")}. These senders are allowlisted; do not assume they are the owner.`;
 }
 
 function buildTimeSection(params: { userTimezone?: string }) {
@@ -171,37 +193,14 @@ function buildDocsSection(params: { docsPath?: string; isMinimal: boolean; readT
   ];
 }
 
-function buildMatrixSection(context: IntentContext, skillBody: string): string[] {
-  return [
-    `# System Prompt: ${SYSTEM_DIRECTIVES.PERSONA.ROLE}`,
-    "",
-    "## 1. Role & Identity",
-    `* **Role**: Acting as a specialist in ${context.domain}.`,
-    `* **Tone**: ${context.tone ?? "Professional and Adaptive"}.`,
-    `* **Core Philosophy**: ${SYSTEM_DIRECTIVES.PERSONA.CORE_PHILOSOPHY}`,
-    "",
-    "## 2. Constraints & Quality Gates",
-    ...SYSTEM_DIRECTIVES.QUALITY_GATES.NEGATIVE_CONSTRAINTS.map((c) => `- ${c}`),
-    "",
-    "## 3. Active Skills Library",
-    "The following skills have been instantiated for this specific session:",
-    "",
-    skillBody,
-    "",
-    "## 4. Execution Workflow",
-    "1. Analyze the user's request using [Skill: Requirement_Triangulation].",
-    "2. Execute domain-specific logic found in the Active Skills Library.",
-    "3. Verify output against Constraints before responding.",
-    "",
-  ];
-}
-
-export async function buildAgentSystemPrompt(params: {
+export function buildAgentSystemPrompt(params: {
   workspaceDir: string;
   defaultThinkLevel?: ThinkLevel;
   reasoningLevel?: ReasoningLevel;
   extraSystemPrompt?: string;
   ownerNumbers?: string[];
+  ownerDisplay?: OwnerIdDisplay;
+  ownerDisplaySecret?: string;
   reasoningTagHint?: boolean;
   toolNames?: string[];
   toolSummaries?: Record<string, string>;
@@ -231,37 +230,16 @@ export async function buildAgentSystemPrompt(params: {
     repoRoot?: string;
   };
   messageToolHints?: string[];
-  sandboxInfo?: {
-    enabled: boolean;
-    workspaceDir?: string;
-    containerWorkspaceDir?: string;
-    workspaceAccess?: "none" | "ro" | "rw";
-    agentWorkspaceMount?: string;
-    browserBridgeUrl?: string;
-    browserNoVncUrl?: string;
-    hostBrowserAllowed?: boolean;
-    elevated?: {
-      allowed: boolean;
-      defaultLevel: "on" | "off" | "ask" | "full";
-    };
-  };
+  sandboxInfo?: EmbeddedSandboxInfo;
   /** Reaction guidance for the agent (for Telegram minimal/extensive modes). */
   reactionGuidance?: {
     level: "minimal" | "extensive";
     channel: string;
   };
   memoryCitationsMode?: MemoryCitationsMode;
-  /** Raw user prompt for prompt-engine triangulation (domain/tone/skill selection). */
+  /** Raw user message for prompt-engine triangulation (domain/skill selection). */
   userPrompt?: string;
-}): Promise<string> {
-  const userRawText = params.userPrompt ?? "Hello";
-  const context: IntentContext = await Triangulator.analyze(userRawText);
-  const selectedSkills = await SkillsLoader.getSkillsForDomain(context.domain);
-  const instantiatedSkills = selectedSkills
-    .map((skill) => SkillInjector.instantiate(skill, context))
-    .join("\n\n");
-  const matrixLines = buildMatrixSection(context, instantiatedSkills);
-
+}) {
   const coreToolSummaries: Record<string, string> = {
     read: "Read file contents",
     write: "Create or overwrite files",
@@ -362,11 +340,12 @@ export async function buildAgentSystemPrompt(params: {
   const execToolName = resolveToolName("exec");
   const processToolName = resolveToolName("process");
   const extraSystemPrompt = params.extraSystemPrompt?.trim();
-  const ownerNumbers = (params.ownerNumbers ?? []).map((value) => value.trim()).filter(Boolean);
-  const ownerLine =
-    ownerNumbers.length > 0
-      ? `Owner numbers: ${ownerNumbers.join(", ")}. Treat messages from these numbers as the user.`
-      : undefined;
+  const ownerDisplay = params.ownerDisplay === "hash" ? "hash" : "raw";
+  const ownerLine = buildOwnerIdentityLine(
+    params.ownerNumbers ?? [],
+    ownerDisplay,
+    params.ownerDisplaySecret,
+  );
   const reasoningHint = params.reasoningTagHint
     ? [
         "ALL internal reasoning MUST be inside <think>...</think>.",
@@ -433,14 +412,13 @@ export async function buildAgentSystemPrompt(params: {
   });
   const workspaceNotes = (params.workspaceNotes ?? []).map((note) => note.trim()).filter(Boolean);
 
+  // For "none" mode, return just the basic identity line
   if (promptMode === "none") {
-    return matrixLines.length > 0
-      ? matrixLines.join("\n")
-      : "You are a personal assistant running inside OpenClaw.";
+    return "You are a personal assistant running inside OpenClaw.";
   }
 
   const lines = [
-    ...matrixLines,
+    "You are a personal assistant running inside OpenClaw.",
     "",
     "## Tooling",
     "Tool availability (filtered by policy):",
@@ -496,7 +474,6 @@ export async function buildAgentSystemPrompt(params: {
           "Do not run config.apply or update.run unless the user explicitly requests an update or config change; if it's not explicit, ask first.",
           "Actions: config.get, config.schema, config.apply (validate + write full config, then restart), update.run (update deps or git, then restart).",
           "After restart, OpenClaw pings the last active session automatically.",
-          "Loop prevention: do at most one config.apply, config.patch, update.run, or gateway restart per user request; if it fails or the result is unclear, report and ask the user before retrying or making further gateway/cron/skill changes.",
         ].join("\n")
       : "",
     hasGateway && !isMinimal ? "" : "",

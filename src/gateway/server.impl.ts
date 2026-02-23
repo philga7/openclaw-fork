@@ -304,6 +304,7 @@ export async function startGatewayServer(
     openAiChatCompletionsEnabled,
     openResponsesEnabled,
     openResponsesConfig,
+    strictTransportSecurityHeader,
     controlUiBasePath,
     controlUiRoot: controlUiRootOverride,
     resolvedAuth,
@@ -388,6 +389,7 @@ export async function startGatewayServer(
     openAiChatCompletionsEnabled,
     openResponsesEnabled,
     openResponsesConfig,
+    strictTransportSecurityHeader,
     resolvedAuth,
     rateLimiter: authRateLimiter,
     gatewayTls,
@@ -605,6 +607,17 @@ export async function startGatewayServer(
       nodeUnsubscribe,
       nodeUnsubscribeAll,
       hasConnectedMobileNode: hasMobileNodeConnected,
+      hasExecApprovalClients: () => {
+        for (const gatewayClient of clients) {
+          const scopes = Array.isArray(gatewayClient.connect.scopes)
+            ? gatewayClient.connect.scopes
+            : [];
+          if (scopes.includes("operator.admin") || scopes.includes("operator.approvals")) {
+            return true;
+          }
+        }
+        return false;
+      },
       nodeRegistry,
       agentRunSeq,
       chatAbortControllers,
@@ -635,17 +648,17 @@ export async function startGatewayServer(
     log,
     isNixMode,
   });
-  if (!minimalTestGateway) {
-    scheduleGatewayUpdateCheck({
-      cfg: cfgAtStart,
-      log,
-      isNixMode,
-      onUpdateAvailableChange: (updateAvailable) => {
-        const payload: GatewayUpdateAvailableEventPayload = { updateAvailable };
-        broadcast(GATEWAY_EVENT_UPDATE_AVAILABLE, payload, { dropIfSlow: true });
-      },
-    });
-  }
+  const stopGatewayUpdateCheck = minimalTestGateway
+    ? () => {}
+    : scheduleGatewayUpdateCheck({
+        cfg: cfgAtStart,
+        log,
+        isNixMode,
+        onUpdateAvailableChange: (updateAvailable) => {
+          const payload: GatewayUpdateAvailableEventPayload = { updateAvailable };
+          broadcast(GATEWAY_EVENT_UPDATE_AVAILABLE, payload, { dropIfSlow: true });
+        },
+      });
   const tailscaleCleanup = minimalTestGateway
     ? null
     : await startGatewayTailscaleExposure({
@@ -733,6 +746,7 @@ export async function startGatewayServer(
     pluginServices,
     cron,
     heartbeatRunner,
+    updateCheckStop: stopGatewayUpdateCheck,
     nodePresenceTimers,
     broadcast,
     tickInterval,

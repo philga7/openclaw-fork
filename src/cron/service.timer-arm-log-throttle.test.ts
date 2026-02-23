@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { CronJob } from "./types.js";
 import { createCronServiceState } from "./service/state.js";
 import { armTimer } from "./service/timer.js";
+import type { CronJob } from "./types.js";
 
 const TIMER_ARMED_MSG = "cron: timer armed";
 
